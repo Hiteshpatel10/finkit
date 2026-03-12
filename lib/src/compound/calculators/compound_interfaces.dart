@@ -1,13 +1,14 @@
 import 'package:finkit/src/compound/models/compound_frequency.dart';
 import 'package:finkit/src/compound/models/compound_input.dart';
 import 'package:finkit/src/compound/models/compound_result.dart';
+import 'package:finkit/src/compound/models/contribution_frequency.dart';
 
 /// Calculates the maturity amount given all inputs.
 abstract interface class CompoundMaturitySolver {
   CompoundResult calculate(CompoundInput input);
 }
 
-/// Calculates the monthly contribution needed to reach a target corpus.
+/// Calculates the contribution needed to reach a target corpus.
 abstract interface class CompoundContributionSolver {
   double calculateRequiredContribution({
     required double targetAmount,
@@ -16,7 +17,7 @@ abstract interface class CompoundContributionSolver {
     required int tenureMonths,
     ContributionFrequency contributionFrequency,
     CompoundFrequency compoundFrequency,
-    double annualContributionGrowthRate,
+    ContributionStepUp? stepUp,
   });
 }
 
@@ -29,7 +30,7 @@ abstract interface class CompoundRateSolver {
     required int tenureMonths,
     ContributionFrequency contributionFrequency,
     CompoundFrequency compoundFrequency,
-    double annualContributionGrowthRate,
+    ContributionStepUp? stepUp,
   });
 }
 
@@ -42,6 +43,6 @@ abstract interface class CompoundTenureSolver {
     required double contribution,
     ContributionFrequency contributionFrequency,
     CompoundFrequency compoundFrequency,
-    double annualContributionGrowthRate,
+    ContributionStepUp? stepUp,
   });
 }

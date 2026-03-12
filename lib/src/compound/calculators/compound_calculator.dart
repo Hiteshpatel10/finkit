@@ -1,6 +1,7 @@
 import 'package:finkit/src/compound/models/compound_frequency.dart';
 import 'package:finkit/src/compound/models/compound_input.dart';
 import 'package:finkit/src/compound/models/compound_result.dart';
+import 'package:finkit/src/compound/models/contribution_frequency.dart';
 import 'compound_interfaces.dart';
 
 /// The core compound interest engine — single source of truth for all
@@ -15,12 +16,17 @@ import 'compound_interfaces.dart';
 ///   r    = annual rate (decimal)
 ///   f    = compounding periods per year
 ///   n    = total years
-///   C(t) = contribution at time t (grows at annualContributionGrowthRate each year)
+///   C(t) = contribution at time t — stepped up yearly via [ContributionStepUp]
 ///
 /// Special cases:
 ///   P = 0          → pure SIP
 ///   contribution=0 → pure lumpsum
 ///   both > 0       → combined (lumpsum + regular top-ups)
+///
+/// **Step-up behaviour**:
+///   - [FixedStepUp]      → currentContribution += amountPerYear  (linear growth)
+///   - [PercentageStepUp] → currentContribution *= (1 + rate)     (compounding growth)
+///   - null               → flat contributions throughout
 ///
 /// This class is the delegate for [SipCalculator] and [LumpsumCalculator].
 class CompoundCalculator
@@ -34,9 +40,9 @@ class CompoundCalculator
   /// The main calculation method. Returns a full [CompoundResult] including
   /// period-by-period breakdown and yearly summary.
   ///
-  /// Strategy: simulate month-by-month to correctly handle:
+  /// Strategy: simulate period-by-period to correctly handle:
   ///   - mismatched compounding vs contribution frequencies
-  ///   - contribution growth rate (applied annually)
+  ///   - yearly contribution step-up (fixed amount or percentage)
   ///   - partial periods at the end of tenure
   @override
   CompoundResult calculate(CompoundInput input) {
@@ -54,40 +60,46 @@ class CompoundCalculator
       compoundFrequency: input.compoundFrequency,
     );
 
-    // How many compounding periods correspond to one contribution cycle
-    // e.g. monthly contribution + monthly compounding = 1 period per contribution
+    // How many compounding periods correspond to one contribution cycle.
+    // e.g. monthly contribution + monthly compounding  = 1 period per contribution
     //      quarterly contribution + monthly compounding = 3 periods per contribution
     final double periodsPerContribution =
         input.compoundFrequency.periodsPerYear /
         input.contributionFrequency.periodsPerYear;
 
-    // Current contribution amount — grows annually
+    // Tracks the current contribution amount — mutated by step-up logic each year
     double currentContribution = input.contribution;
 
     for (int period = 1; period <= totalPeriods; period++) {
       final int year = _yearOf(period, input.compoundFrequency);
       final double opening = balance;
 
-      // ── Apply contribution if this period aligns with contribution schedule ──
-      double contributionThisPeriod = 0;
-
-      if (input.contribution > 0) {
-        // Grow contribution at the start of each new year (year > 1)
-        if (input.annualContributionGrowthRate > 0 &&
-            period > 1 &&
-            _isFirstPeriodOfYear(period, input.compoundFrequency)) {
-          currentContribution *= (1 + input.annualContributionGrowthRate / 100);
-        }
-
-        // Check if a contribution falls on this compounding period
-        if (_isContributionPeriod(period, periodsPerContribution)) {
-          contributionThisPeriod = currentContribution;
-          totalInvested += contributionThisPeriod;
-          balance += contributionThisPeriod;
+      // ── Apply yearly step-up at the start of each new year (year > 1) ───────
+      if (input.contribution > 0 &&
+          input.stepUp != null &&
+          period > 1 &&
+          _isFirstPeriodOfYear(period, input.compoundFrequency)) {
+        switch (input.stepUp) {
+          case FixedStepUp(:final amountPerYear):
+            currentContribution += amountPerYear;
+          case PercentageStepUp(:final percentPerYear):
+            currentContribution *= (1 + percentPerYear / 100);
+          case null:
+            break; // unreachable — guarded above, satisfies exhaustiveness
         }
       }
 
-      // ── Compound interest on balance (after contribution) ──────────────────
+      // ── Apply contribution if this period aligns with contribution schedule ──
+      double contributionThisPeriod = 0;
+
+      if (input.contribution > 0 &&
+          _isContributionPeriod(period, periodsPerContribution)) {
+        contributionThisPeriod = currentContribution;
+        totalInvested += contributionThisPeriod;
+        balance += contributionThisPeriod;
+      }
+
+      // ── Compound interest on balance (after contribution) ───────────────────
       final double interest = balance * periodicRate;
       balance += interest;
 
@@ -117,7 +129,7 @@ class CompoundCalculator
 
   // ─── Contribution Solver ────────────────────────────────────────────────────
 
-  // No closed-form when contribution growth rate > 0 or frequencies differ.
+  // No closed-form when step-up is active or frequencies differ.
   // Bisection is used universally for correctness across all configurations.
   @override
   double calculateRequiredContribution({
@@ -127,7 +139,7 @@ class CompoundCalculator
     required int tenureMonths,
     ContributionFrequency contributionFrequency = ContributionFrequency.monthly,
     CompoundFrequency compoundFrequency = CompoundFrequency.monthly,
-    double annualContributionGrowthRate = 0,
+    ContributionStepUp? stepUp,
   }) {
     // Maturity is monotonically increasing with contribution → bisection valid
     double low = 0;
@@ -146,7 +158,7 @@ class CompoundCalculator
           contribution: mid,
           contributionFrequency: contributionFrequency,
           compoundFrequency: compoundFrequency,
-          annualContributionGrowthRate: annualContributionGrowthRate,
+          stepUp: stepUp,
         ),
       );
 
@@ -172,7 +184,7 @@ class CompoundCalculator
     required int tenureMonths,
     ContributionFrequency contributionFrequency = ContributionFrequency.monthly,
     CompoundFrequency compoundFrequency = CompoundFrequency.monthly,
-    double annualContributionGrowthRate = 0,
+    ContributionStepUp? stepUp,
   }) {
     CompoundResult maturityAt(double annualRate) => calculate(
       CompoundInput(
@@ -182,7 +194,7 @@ class CompoundCalculator
         contribution: contribution,
         contributionFrequency: contributionFrequency,
         compoundFrequency: compoundFrequency,
-        annualContributionGrowthRate: annualContributionGrowthRate,
+        stepUp: stepUp,
       ),
     );
 
@@ -204,10 +216,10 @@ class CompoundCalculator
     required double contribution,
     ContributionFrequency contributionFrequency = ContributionFrequency.monthly,
     CompoundFrequency compoundFrequency = CompoundFrequency.monthly,
-    double annualContributionGrowthRate = 0,
+    ContributionStepUp? stepUp,
   }) {
     int low = 1;
-    int high = 1200; // 100 years upper bound
+    int high = 1200; // 100 years in months upper bound
 
     while (low < high) {
       final mid = (low + high) ~/ 2;
@@ -220,7 +232,7 @@ class CompoundCalculator
           contribution: contribution,
           contributionFrequency: contributionFrequency,
           compoundFrequency: compoundFrequency,
-          annualContributionGrowthRate: annualContributionGrowthRate,
+          stepUp: stepUp,
         ),
       );
 
@@ -237,6 +249,7 @@ class CompoundCalculator
   // ─── Private: Numerical Methods ─────────────────────────────────────────────
 
   /// Newton-Raphson for rate.
+  ///
   /// Approximates derivative numerically (finite difference) since the
   /// simulation-based approach has no analytical derivative.
   ///
@@ -305,7 +318,6 @@ class CompoundCalculator
     required int tenureMonths,
     required CompoundFrequency compoundFrequency,
   }) {
-    // Convert months to years, multiply by periods per year
     return ((tenureMonths / 12) * compoundFrequency.periodsPerYear).round();
   }
 
@@ -324,7 +336,7 @@ class CompoundCalculator
   /// Handles mismatched frequencies:
   ///   e.g. monthly contribution + daily compounding → contribute every ~30 periods
   bool _isContributionPeriod(int period, double periodsPerContribution) {
-    // Use rounding to handle non-integer ratios (e.g. weekly contributions
+    // Rounding handles non-integer ratios (e.g. weekly contributions
     // with monthly compounding)
     final expected = (period / periodsPerContribution).round();
     final previous = ((period - 1) / periodsPerContribution).round();
