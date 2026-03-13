@@ -1,74 +1,38 @@
-/// The complete result of a compound interest calculation.
-///
-/// Contains both the summary figures and a full period-by-period breakdown,
-/// making it suitable for rendering charts, tables, and summary cards.
-class CompoundResult {
-  /// Final corpus value at the end of the tenure.
-  final double maturityAmount;
-
-  /// Total amount invested (principal + all contributions, before growth).
-  final double totalInvested;
-
-  /// Total interest / returns earned = maturityAmount − totalInvested.
-  final double totalInterest;
-
-  /// Period-by-period breakdown (one entry per compounding period).
-  final List<CompoundBreakdownEntry> breakdown;
-
-  const CompoundResult({
-    required this.maturityAmount,
-    required this.totalInvested,
-    required this.totalInterest,
-    required this.breakdown,
-  });
-
-  /// Aggregated yearly breakdown derived from the period breakdown.
-  List<YearlyBreakdownEntry> get yearlyBreakdown {
-    final Map<int, List<CompoundBreakdownEntry>> byYear = {};
-
-    for (final entry in breakdown) {
-      byYear.putIfAbsent(entry.year, () => []).add(entry);
-    }
-
-    return byYear.entries.map((e) {
-      final entries       = e.value;
-      final year          = e.key;
-      final invested      = entries.fold(0.0, (sum, e) => sum + e.contributionThisPeriod);
-      final closingBalance = entries.last.closingBalance;
-      final interestEarned = entries.fold(0.0, (sum, e) => sum + e.interestThisPeriod);
-
-      return YearlyBreakdownEntry(
-        year:            year,
-        totalInvested:   invested,
-        interestEarned:  interestEarned,
-        closingBalance:  closingBalance,
-      );
-    }).toList();
-  }
-}
-
-/// A single period's data in the compound interest breakdown.
+/// A single period's snapshot within the compound interest simulation.
 class CompoundBreakdownEntry {
-  /// Period index (1-based).
+  /// Compounding period number (1-based).
   final int period;
 
-  /// Calendar year this period falls in (1-based).
+  /// Calendar year this period belongs to (1-based).
   final int year;
 
-  /// Balance at the start of this period.
+  /// Balance at the start of the period (before any contribution or interest).
   final double openingBalance;
 
-  /// Contribution made this period (0 if no contribution this period).
+  /// Contribution applied this period (0 if no contribution was scheduled).
+  /// For [ContributionTiming.beginning] this is added before interest;
+  /// for [ContributionTiming.end] it is added after interest.
   final double contributionThisPeriod;
 
-  /// Interest earned this period on the opening balance + contribution.
+  /// Interest earned this period.
   final double interestThisPeriod;
 
-  /// Balance at the end of this period.
+  /// Withdrawal taken this period (0 if no withdrawal was scheduled).
+  /// Always applied after interest is compounded.
+  final double withdrawalThisPeriod;
+
+  /// Balance at the end of the period (after contribution, interest, withdrawal).
   final double closingBalance;
 
-  /// Cumulative amount invested up to and including this period.
+  /// Running total of all contributions + principal invested so far.
   final double cumulativeInvested;
+
+  /// Running total of all withdrawals taken so far.
+  final double cumulativeWithdrawn;
+
+  /// True when the corpus was exhausted by the withdrawal this period.
+  /// When true, [closingBalance] will be 0 and no further periods are simulated.
+  final bool balanceExhausted;
 
   const CompoundBreakdownEntry({
     required this.period,
@@ -76,22 +40,47 @@ class CompoundBreakdownEntry {
     required this.openingBalance,
     required this.contributionThisPeriod,
     required this.interestThisPeriod,
+    this.withdrawalThisPeriod = 0,
     required this.closingBalance,
     required this.cumulativeInvested,
+    this.cumulativeWithdrawn = 0,
+    this.balanceExhausted = false,
   });
 }
 
-/// Aggregated data for a single calendar year.
-class YearlyBreakdownEntry {
-  final int year;
-  final double totalInvested;
-  final double interestEarned;
-  final double closingBalance;
+/// The final output of a compound interest calculation.
+class CompoundResult {
+  /// Final corpus value at the end of the tenure.
+  /// Will be 0 if the corpus was exhausted by withdrawals before the tenure ended.
+  final double maturityAmount;
 
-  const YearlyBreakdownEntry({
-    required this.year,
+  /// Total amount invested (principal + all contributions).
+  final double totalInvested;
+
+  /// Net interest / growth earned.
+  ///   totalInterest = maturityAmount + totalWithdrawn − totalInvested
+  final double totalInterest;
+
+  /// Total amount withdrawn over the tenure (SWP total).
+  /// 0 when no [WithdrawalConfig] is provided.
+  final double totalWithdrawn;
+
+  /// Period-by-period simulation log.
+  final List<CompoundBreakdownEntry> breakdown;
+
+  /// True if the corpus was exhausted before the end of the tenure.
+  bool get isCorpusExhausted =>
+      breakdown.isNotEmpty && breakdown.last.balanceExhausted;
+
+  /// The period at which the corpus was exhausted, or null if it wasn't.
+  int? get exhaustedAtPeriod =>
+      isCorpusExhausted ? breakdown.last.period : null;
+
+  const CompoundResult({
+    required this.maturityAmount,
     required this.totalInvested,
-    required this.interestEarned,
-    required this.closingBalance,
+    required this.totalInterest,
+    this.totalWithdrawn = 0,
+    required this.breakdown,
   });
 }

@@ -1,7 +1,9 @@
 import 'package:finkit/src/compound/models/compound_frequency.dart';
 import 'package:finkit/src/compound/models/compound_input.dart';
 import 'package:finkit/src/compound/models/compound_result.dart';
-import 'package:finkit/src/compound/models/contribution_frequency.dart';
+import 'package:finkit/src/compound/models/contribution_config.dart';
+import 'package:finkit/src/compound/models/payment_config.dart';
+import 'package:finkit/src/compound/models/withdrawal_config.dart';
 import 'compound_interfaces.dart';
 
 /// The core compound interest engine — single source of truth for all
@@ -10,25 +12,31 @@ import 'compound_interfaces.dart';
 /// Unified formula:
 ///   M = P × (1 + r/f)^(f×n)
 ///     + Σ [ C(t) × (1 + r/f)^(f × remaining_years(t)) ]
+///     − Σ [ W(t) × (1 + r/f)^(f × remaining_years(t)) ]
 ///
-/// where:
-///   P    = principal (lumpsum)
-///   r    = annual rate (decimal)
-///   f    = compounding periods per year
-///   n    = total years
-///   C(t) = contribution at time t — stepped up yearly via [ContributionStepUp]
+/// Both contribution and withdrawal are optional config objects on [CompoundInput].
+/// Null means that side is inactive:
 ///
-/// Special cases:
-///   P = 0          → pure SIP
-///   contribution=0 → pure lumpsum
-///   both > 0       → combined (lumpsum + regular top-ups)
+/// | Scenario       | contribution | withdrawal |
+/// |----------------|--------------|------------|
+/// | Pure SIP       | set          | null       |
+/// | Pure lumpsum   | null         | null       |
+/// | Lumpsum + SIP  | set          | null       |
+/// | SWP            | null         | set        |
+/// | SIP + SWP      | set          | set        |
 ///
-/// **Step-up behaviour**:
-///   - [FixedStepUp]      → currentContribution += amountPerYear  (linear growth)
-///   - [PercentageStepUp] → currentContribution *= (1 + rate)     (compounding growth)
-///   - null               → flat contributions throughout
+/// **Contribution timing** ([PaymentTiming] inside [ContributionConfig]):
+///   - [PaymentTiming.beginning]: added *before* interest (annuity-due)
+///   - [PaymentTiming.end]: added *after* interest (ordinary annuity, default)
 ///
-/// This class is the delegate for [SipCalculator] and [LumpsumCalculator].
+/// **Step-up** (on both [ContributionConfig.stepUp] and [WithdrawalConfig.stepUp]):
+///   - [FixedStepUp] / [FixedWithdrawalStepUp]      → amount += delta
+///   - [PercentageStepUp] / [PercentageWithdrawalStepUp] → amount *= (1 + rate)
+///   - Frequency controlled by [ContributionStepUp.stepUpFrequency], default yearly
+///
+/// **Withdrawal** ([WithdrawalConfig]):
+///   - Applied end-of-period, after interest
+///   - If balance would go negative, corpus is exhausted and simulation stops
 class CompoundCalculator
     implements
         CompoundMaturitySolver,
@@ -37,71 +45,129 @@ class CompoundCalculator
         CompoundTenureSolver {
   // ─── Core Engine ────────────────────────────────────────────────────────────
 
-  /// The main calculation method. Returns a full [CompoundResult] including
-  /// period-by-period breakdown and yearly summary.
-  ///
-  /// Strategy: simulate period-by-period to correctly handle:
-  ///   - mismatched compounding vs contribution frequencies
-  ///   - yearly contribution step-up (fixed amount or percentage)
-  ///   - partial periods at the end of tenure
   @override
   CompoundResult calculate(CompoundInput input) {
     final breakdown = <CompoundBreakdownEntry>[];
     double balance = input.principal;
     double totalInvested = input.principal;
+    double totalWithdrawn = 0;
 
-    // Periodic rate: annualRate / compoundPeriodsPerYear
     final double periodicRate =
         (input.annualRate / 100) / input.compoundFrequency.periodsPerYear;
 
-    // How many compounding periods fit in the tenure
     final int totalPeriods = _totalCompoundPeriods(
       tenureMonths: input.tenureMonths,
       compoundFrequency: input.compoundFrequency,
     );
 
-    // How many compounding periods correspond to one contribution cycle.
-    // e.g. monthly contribution + monthly compounding  = 1 period per contribution
-    //      quarterly contribution + monthly compounding = 3 periods per contribution
-    final double periodsPerContribution =
-        input.compoundFrequency.periodsPerYear /
-        input.contributionFrequency.periodsPerYear;
+    // Unpack contribution config — null means no contributions
+    final contrib = input.contribution;
+    final double periodsPerContribution = contrib != null
+        ? input.compoundFrequency.periodsPerYear /
+              contrib.frequency.periodsPerYear
+        : double.infinity;
 
-    // Tracks the current contribution amount — mutated by step-up logic each year
-    double currentContribution = input.contribution;
+    // Unpack withdrawal config — null means no withdrawals
+    final withdrawal = input.withdrawal;
+    final double periodsPerWithdrawal = withdrawal != null
+        ? input.compoundFrequency.periodsPerYear /
+              withdrawal.frequency.periodsPerYear
+        : double.infinity;
+
+    // Mutable amounts — mutated by step-up logic each cycle
+    double currentContribution = contrib?.amount ?? 0;
+    double currentWithdrawal = withdrawal?.amount ?? 0;
+
+    // Track fired step-up event counts to detect new cycles
+    int contributionStepUpCount = 0;
+    int withdrawalStepUpCount = 0;
 
     for (int period = 1; period <= totalPeriods; period++) {
       final int year = _yearOf(period, input.compoundFrequency);
       final double opening = balance;
 
-      // ── Apply yearly step-up at the start of each new year (year > 1) ───────
-      if (input.contribution > 0 &&
-          input.stepUp != null &&
-          period > 1 &&
-          _isFirstPeriodOfYear(period, input.compoundFrequency)) {
-        switch (input.stepUp) {
-          case FixedStepUp(:final amountPerYear):
-            currentContribution += amountPerYear;
-          case PercentageStepUp(:final percentPerYear):
-            currentContribution *= (1 + percentPerYear / 100);
-          case null:
-            break; // unreachable — guarded above, satisfies exhaustiveness
+      // ── Contribution step-up ──────────────────────────────────────────────
+      if (contrib != null && contrib.stepUp != null) {
+        final int newCount = _stepUpEventCount(
+          period: period,
+          compoundFrequency: input.compoundFrequency,
+          stepUpFrequency: contrib.stepUp!.stepUpFrequency,
+        );
+        if (newCount > contributionStepUpCount) {
+          contributionStepUpCount = newCount;
+          switch (contrib.stepUp) {
+            case FixedStepUp(:final amount):
+              currentContribution += amount;
+            case PercentageStepUp(:final percent):
+              currentContribution *= (1 + percent / 100);
+            case null:
+              break;
+          }
         }
       }
 
-      // ── Apply contribution if this period aligns with contribution schedule ──
-      double contributionThisPeriod = 0;
+      // ── Withdrawal step-up ────────────────────────────────────────────────
+      if (withdrawal != null && withdrawal.stepUp != null) {
+        final int newCount = _stepUpEventCount(
+          period: period,
+          compoundFrequency: input.compoundFrequency,
+          stepUpFrequency: withdrawal.stepUp!.stepUpFrequency,
+        );
+        if (newCount > withdrawalStepUpCount) {
+          withdrawalStepUpCount = newCount;
+          switch (withdrawal.stepUp) {
+            case FixedWithdrawalStepUp(:final amount):
+              currentWithdrawal += amount;
+            case PercentageWithdrawalStepUp(:final percent):
+              currentWithdrawal *= (1 + percent / 100);
+            case null:
+              break;
+          }
+        }
+      }
 
-      if (input.contribution > 0 &&
-          _isContributionPeriod(period, periodsPerContribution)) {
+      // ── Period flags ──────────────────────────────────────────────────────
+      final bool hasContribution =
+          contrib != null &&
+          _isContributionPeriod(period, periodsPerContribution);
+
+      final bool hasWithdrawal =
+          withdrawal != null &&
+          currentWithdrawal > 0 &&
+          _isContributionPeriod(period, periodsPerWithdrawal);
+
+      // ── Annuity-due: contribute BEFORE interest ───────────────────────────
+      double contributionThisPeriod = 0;
+      if (hasContribution && contrib.timing == PaymentTiming.beginning) {
         contributionThisPeriod = currentContribution;
         totalInvested += contributionThisPeriod;
         balance += contributionThisPeriod;
       }
 
-      // ── Compound interest on balance (after contribution) ───────────────────
+      // ── Compound interest ─────────────────────────────────────────────────
       final double interest = balance * periodicRate;
       balance += interest;
+
+      // ── Ordinary annuity: contribute AFTER interest ───────────────────────
+      if (hasContribution && contrib.timing == PaymentTiming.end) {
+        contributionThisPeriod = currentContribution;
+        totalInvested += contributionThisPeriod;
+        balance += contributionThisPeriod;
+      }
+
+      // ── Withdrawal (always end-of-period) ─────────────────────────────────
+      double withdrawalThisPeriod = 0;
+      bool exhausted = false;
+      if (hasWithdrawal) {
+        if (currentWithdrawal >= balance) {
+          withdrawalThisPeriod = balance;
+          exhausted = true;
+        } else {
+          withdrawalThisPeriod = currentWithdrawal;
+        }
+        totalWithdrawn += withdrawalThisPeriod;
+        balance -= withdrawalThisPeriod;
+      }
 
       breakdown.add(
         CompoundBreakdownEntry(
@@ -110,41 +176,43 @@ class CompoundCalculator
           openingBalance: opening,
           contributionThisPeriod: contributionThisPeriod,
           interestThisPeriod: interest,
+          withdrawalThisPeriod: withdrawalThisPeriod,
           closingBalance: balance,
           cumulativeInvested: totalInvested,
+          cumulativeWithdrawn: totalWithdrawn,
+          balanceExhausted: exhausted,
         ),
       );
+
+      if (exhausted) break;
     }
 
-    final maturity = balance;
-    final totalInterest = maturity - totalInvested;
-
     return CompoundResult(
-      maturityAmount: maturity,
+      maturityAmount: balance,
       totalInvested: totalInvested,
-      totalInterest: totalInterest,
+      totalInterest: balance + totalWithdrawn - totalInvested,
+      totalWithdrawn: totalWithdrawn,
       breakdown: List.unmodifiable(breakdown),
     );
   }
 
-  // ─── Contribution Solver ────────────────────────────────────────────────────
+  // ─── Contribution Solver ─────────────────────────────────────────────────────
+  //
+  // Accepts a ContributionConfig template — the solver varies only `amount`
+  // via bisection, preserving all other config (frequency, timing, step-up).
 
-  // No closed-form when step-up is active or frequencies differ.
-  // Bisection is used universally for correctness across all configurations.
   @override
   double calculateRequiredContribution({
     required double targetAmount,
     required double principal,
     required double annualRate,
     required int tenureMonths,
-    ContributionFrequency contributionFrequency = ContributionFrequency.monthly,
+    required ContributionConfig contributionTemplate,
     CompoundFrequency compoundFrequency = CompoundFrequency.monthly,
-    ContributionStepUp? stepUp,
+    WithdrawalConfig? withdrawal,
   }) {
-    // Maturity is monotonically increasing with contribution → bisection valid
     double low = 0;
-    double high =
-        targetAmount; // upper bound: contribute entire target every period
+    double high = targetAmount;
     double mid = 0;
 
     for (int i = 0; i < 100; i++) {
@@ -155,10 +223,9 @@ class CompoundCalculator
           principal: principal,
           annualRate: annualRate,
           tenureMonths: tenureMonths,
-          contribution: mid,
-          contributionFrequency: contributionFrequency,
           compoundFrequency: compoundFrequency,
-          stepUp: stepUp,
+          contribution: contributionTemplate.copyWith(amount: mid),
+          withdrawal: withdrawal,
         ),
       );
 
@@ -172,29 +239,25 @@ class CompoundCalculator
     return mid;
   }
 
-  // ─── Rate Solver ────────────────────────────────────────────────────────────
+  // ─── Rate Solver ─────────────────────────────────────────────────────────────
 
-  // No closed-form for rate when contributions are involved.
-  // Newton-Raphson with bisection fallback.
   @override
   double calculateRequiredRate({
     required double targetAmount,
     required double principal,
-    required double contribution,
     required int tenureMonths,
-    ContributionFrequency contributionFrequency = ContributionFrequency.monthly,
     CompoundFrequency compoundFrequency = CompoundFrequency.monthly,
-    ContributionStepUp? stepUp,
+    ContributionConfig? contribution,
+    WithdrawalConfig? withdrawal,
   }) {
     CompoundResult maturityAt(double annualRate) => calculate(
       CompoundInput(
         principal: principal,
         annualRate: annualRate,
         tenureMonths: tenureMonths,
-        contribution: contribution,
-        contributionFrequency: contributionFrequency,
         compoundFrequency: compoundFrequency,
-        stepUp: stepUp,
+        contribution: contribution,
+        withdrawal: withdrawal,
       ),
     );
 
@@ -205,21 +268,19 @@ class CompoundCalculator
     }
   }
 
-  // ─── Tenure Solver ──────────────────────────────────────────────────────────
+  // ─── Tenure Solver ────────────────────────────────────────────────────────────
 
-  // Maturity grows monotonically with tenure → integer bisection.
   @override
   int calculateRequiredTenure({
     required double targetAmount,
     required double principal,
     required double annualRate,
-    required double contribution,
-    ContributionFrequency contributionFrequency = ContributionFrequency.monthly,
     CompoundFrequency compoundFrequency = CompoundFrequency.monthly,
-    ContributionStepUp? stepUp,
+    ContributionConfig? contribution,
+    WithdrawalConfig? withdrawal,
   }) {
     int low = 1;
-    int high = 1200; // 100 years in months upper bound
+    int high = 1200; // 100 years upper bound
 
     while (low < high) {
       final mid = (low + high) ~/ 2;
@@ -229,10 +290,9 @@ class CompoundCalculator
           principal: principal,
           annualRate: annualRate,
           tenureMonths: mid,
-          contribution: contribution,
-          contributionFrequency: contributionFrequency,
           compoundFrequency: compoundFrequency,
-          stepUp: stepUp,
+          contribution: contribution,
+          withdrawal: withdrawal,
         ),
       );
 
@@ -246,22 +306,18 @@ class CompoundCalculator
     return low;
   }
 
-  // ─── Private: Numerical Methods ─────────────────────────────────────────────
+  // ─── Private: Numerical Methods ──────────────────────────────────────────────
 
-  /// Newton-Raphson for rate.
-  ///
-  /// Approximates derivative numerically (finite difference) since the
-  /// simulation-based approach has no analytical derivative.
-  ///
-  ///   f(r)  = maturity(r) − target  →  find root
-  ///   f'(r) ≈ (maturity(r + h) − maturity(r)) / h   [numerical derivative]
+  /// Newton-Raphson for rate (numerical derivative via finite difference).
+  ///   f(r)  = maturity(r) − target
+  ///   f'(r) ≈ (maturity(r + h) − maturity(r)) / h
   ///   r₁    = r₀ − f(r₀) / f'(r₀)
   double _newtonRaphsonRate(
     double target,
     CompoundResult Function(double) maturityAt,
   ) {
-    double r = 10.0; // initial guess: 10% annual
-    const h = 0.0001; // finite difference step
+    double r = 10.0;
+    const h = 0.0001;
 
     for (int i = 0; i < 50; i++) {
       final f = maturityAt(r).maturityAmount - target;
@@ -278,9 +334,7 @@ class CompoundCalculator
         throw StateError('Newton-Raphson diverged, switching to bisection');
       }
 
-      if ((next - r).abs() < 1e-8) {
-        return next;
-      }
+      if ((next - r).abs() < 1e-8) return next;
 
       r = next;
     }
@@ -289,18 +343,16 @@ class CompoundCalculator
   }
 
   /// Bisection fallback for rate.
-  /// Maturity is monotonically increasing with rate → valid.
   double _bisectionRate(
     double target,
     CompoundResult Function(double) maturityAt,
   ) {
     double low = 0.0;
-    double high = 200.0; // 200% annual rate cap
+    double high = 200.0;
     double mid = 0.0;
 
     for (int i = 0; i < 200; i++) {
       mid = (low + high) / 2;
-
       if (maturityAt(mid).maturityAmount > target) {
         high = mid;
       } else {
@@ -311,9 +363,8 @@ class CompoundCalculator
     return mid;
   }
 
-  // ─── Private: Period Helpers ─────────────────────────────────────────────────
+  // ─── Private: Period Helpers ──────────────────────────────────────────────────
 
-  /// Total number of compounding periods for the given tenure.
   int _totalCompoundPeriods({
     required int tenureMonths,
     required CompoundFrequency compoundFrequency,
@@ -321,23 +372,25 @@ class CompoundCalculator
     return ((tenureMonths / 12) * compoundFrequency.periodsPerYear).round();
   }
 
-  /// Which calendar year (1-based) a given period belongs to.
   int _yearOf(int period, CompoundFrequency compoundFrequency) {
     return ((period - 1) / compoundFrequency.periodsPerYear).floor() + 1;
   }
 
-  /// Whether this period is the first period of a new year.
-  bool _isFirstPeriodOfYear(int period, CompoundFrequency compoundFrequency) {
-    return (period - 1) % compoundFrequency.periodsPerYear == 0;
+  /// How many step-up events have fired by the start of [period].
+  ///
+  /// Fires once per completed step-up cycle (first event at start of cycle 2).
+  int _stepUpEventCount({
+    required int period,
+    required CompoundFrequency compoundFrequency,
+    required PaymentFrequency stepUpFrequency,
+  }) {
+    final double periodsPerStepUp =
+        compoundFrequency.periodsPerYear / stepUpFrequency.periodsPerYear;
+    return ((period - 1) / periodsPerStepUp).floor();
   }
 
-  /// Whether a contribution should be made on this compounding period.
-  ///
-  /// Handles mismatched frequencies:
-  ///   e.g. monthly contribution + daily compounding → contribute every ~30 periods
+  /// Whether a contribution/withdrawal should occur on this compounding period.
   bool _isContributionPeriod(int period, double periodsPerContribution) {
-    // Rounding handles non-integer ratios (e.g. weekly contributions
-    // with monthly compounding)
     final expected = (period / periodsPerContribution).round();
     final previous = ((period - 1) / periodsPerContribution).round();
     return expected != previous;

@@ -1,48 +1,50 @@
 import 'package:finkit/src/compound/models/compound_frequency.dart';
 import 'package:finkit/src/compound/models/compound_input.dart';
 import 'package:finkit/src/compound/models/compound_result.dart';
-import 'package:finkit/src/compound/models/contribution_frequency.dart';
+import 'package:finkit/src/compound/models/contribution_config.dart';
+import 'package:finkit/src/compound/models/withdrawal_config.dart';
 
-/// Calculates the maturity amount given all inputs.
+/// Calculates the maturity value for a given [CompoundInput].
 abstract interface class CompoundMaturitySolver {
   CompoundResult calculate(CompoundInput input);
 }
 
-/// Calculates the contribution needed to reach a target corpus.
+/// Solves for the periodic contribution amount needed to hit a target maturity.
+///
+/// Accepts a [contributionTemplate] — all fields (frequency, timing, stepUp)
+/// are preserved; only [ContributionConfig.amount] is varied by the solver.
 abstract interface class CompoundContributionSolver {
   double calculateRequiredContribution({
     required double targetAmount,
     required double principal,
     required double annualRate,
     required int tenureMonths,
-    ContributionFrequency contributionFrequency,
+    required ContributionConfig contributionTemplate,
     CompoundFrequency compoundFrequency,
-    ContributionStepUp? stepUp,
+    WithdrawalConfig? withdrawal,
   });
 }
 
-/// Calculates the required annual rate to reach a target corpus.
+/// Solves for the annual rate needed to hit a target maturity.
 abstract interface class CompoundRateSolver {
   double calculateRequiredRate({
     required double targetAmount,
     required double principal,
-    required double contribution,
     required int tenureMonths,
-    ContributionFrequency contributionFrequency,
     CompoundFrequency compoundFrequency,
-    ContributionStepUp? stepUp,
+    ContributionConfig? contribution,
+    WithdrawalConfig? withdrawal,
   });
 }
 
-/// Calculates the tenure (months) needed to reach a target corpus.
+/// Solves for the tenure (in months) needed to hit a target maturity.
 abstract interface class CompoundTenureSolver {
   int calculateRequiredTenure({
     required double targetAmount,
     required double principal,
     required double annualRate,
-    required double contribution,
-    ContributionFrequency contributionFrequency,
     CompoundFrequency compoundFrequency,
-    ContributionStepUp? stepUp,
+    ContributionConfig? contribution,
+    WithdrawalConfig? withdrawal,
   });
 }

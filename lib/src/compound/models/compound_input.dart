@@ -1,28 +1,57 @@
+import 'package:finkit/src/compound/models/contribution_config.dart';
+
 import 'compound_frequency.dart';
-import 'contribution_frequency.dart';
-
-/// Defines how the contribution amount increases over time.
-sealed class ContributionStepUp {
-  const ContributionStepUp();
-}
-
-/// Contribution increases by a fixed amount each year.
-/// e.g. ₹500/year → ₹5000, ₹5500, ₹6000 ...
-class FixedStepUp extends ContributionStepUp {
-  /// Amount to add to the contribution each year.
-  final double amountPerYear;
-  const FixedStepUp(this.amountPerYear);
-}
-
-/// Contribution increases by a % of the *current* contribution each year.
-/// e.g. 10%/year → ₹5000, ₹5500, ₹6050 ... (compounds)
-class PercentageStepUp extends ContributionStepUp {
-  /// Percentage increase per year (e.g. 10 means 10%).
-  final double percentPerYear;
-  const PercentageStepUp(this.percentPerYear);
-}
+import 'withdrawal_config.dart';
 
 /// The single input model for all compound interest calculations.
+///
+/// Both contribution and withdrawal are optional config objects.
+/// Null means that side is inactive:
+///
+/// | Scenario          | contribution | withdrawal |
+/// |-------------------|--------------|------------|
+/// | Pure SIP          | set          | null       |
+/// | Pure lumpsum      | null         | null       |
+/// | Lumpsum + SIP     | set          | null       |
+/// | SWP               | null         | set        |
+/// | SIP + SWP         | set          | set        |
+///
+/// Examples:
+/// ```dart
+/// // Pure SIP
+/// CompoundInput(
+///   principal: 0,
+///   annualRate: 12,
+///   tenureMonths: 120,
+///   contribution: ContributionConfig(amount: 5000),
+/// )
+///
+/// // Lumpsum
+/// CompoundInput(
+///   principal: 100000,
+///   annualRate: 12,
+///   tenureMonths: 120,
+/// )
+///
+/// // SWP
+/// CompoundInput(
+///   principal: 1000000,
+///   annualRate: 8,
+///   tenureMonths: 240,
+///   withdrawal: WithdrawalConfig(amount: 10000),
+/// )
+///
+/// // Step-up SIP
+/// CompoundInput(
+///   principal: 0,
+///   annualRate: 12,
+///   tenureMonths: 120,
+///   contribution: ContributionConfig(
+///     amount: 5000,
+///     stepUp: PercentageStepUp(10),
+///   ),
+/// )
+/// ```
 class CompoundInput {
   /// One-time initial investment. Use 0 for pure SIP.
   final double principal;
@@ -36,33 +65,19 @@ class CompoundInput {
   /// How often interest is compounded per year.
   final CompoundFrequency compoundFrequency;
 
-  /// Regular contribution amount per [contributionFrequency] period.
-  /// Use 0 for pure lumpsum.
-  final double contribution;
+  /// Periodic contribution config. Null means no contributions (pure lumpsum / SWP).
+  final ContributionConfig? contribution;
 
-  /// How often contributions are made.
-  final ContributionFrequency contributionFrequency;
-
-  /// Optional step-up rule for contributions. Null means flat contributions.
-  ///
-  /// Step-up is always applied yearly, at the start of each new year.
-  ///
-  /// Examples:
-  /// ```dart
-  /// stepUp: FixedStepUp(500)        // +₹500 every year
-  /// stepUp: PercentageStepUp(10)    // +10% of current amount every year
-  /// stepUp: null                    // flat, no increase
-  /// ```
-  final ContributionStepUp? stepUp;
+  /// Periodic withdrawal config. Null means no withdrawals.
+  final WithdrawalConfig? withdrawal;
 
   const CompoundInput({
     required this.principal,
     required this.annualRate,
     required this.tenureMonths,
-    required this.contribution,
     this.compoundFrequency = CompoundFrequency.monthly,
-    this.contributionFrequency = ContributionFrequency.monthly,
-    this.stepUp,
+    this.contribution,
+    this.withdrawal,
   });
 
   CompoundInput copyWith({
@@ -70,20 +85,20 @@ class CompoundInput {
     double? annualRate,
     int? tenureMonths,
     CompoundFrequency? compoundFrequency,
-    double? contribution,
-    ContributionFrequency? contributionFrequency,
-    ContributionStepUp? stepUp,
-    bool clearStepUp = false,
+    ContributionConfig? contribution,
+    bool clearContribution = false,
+    WithdrawalConfig? withdrawal,
+    bool clearWithdrawal = false,
   }) {
     return CompoundInput(
       principal: principal ?? this.principal,
       annualRate: annualRate ?? this.annualRate,
       tenureMonths: tenureMonths ?? this.tenureMonths,
       compoundFrequency: compoundFrequency ?? this.compoundFrequency,
-      contribution: contribution ?? this.contribution,
-      contributionFrequency:
-          contributionFrequency ?? this.contributionFrequency,
-      stepUp: clearStepUp ? null : (stepUp ?? this.stepUp),
+      contribution: clearContribution
+          ? null
+          : (contribution ?? this.contribution),
+      withdrawal: clearWithdrawal ? null : (withdrawal ?? this.withdrawal),
     );
   }
 }
