@@ -15,43 +15,7 @@ import 'withdrawal_config.dart';
 /// | Lumpsum + SIP     | set          | null       |
 /// | SWP               | null         | set        |
 /// | SIP + SWP         | set          | set        |
-///
-/// Examples:
-/// ```dart
-/// // Pure SIP
-/// CompoundInput(
-///   principal: 0,
-///   annualRate: 12,
-///   tenureMonths: 120,
-///   contribution: ContributionConfig(amount: 5000),
-/// )
-///
-/// // Lumpsum
-/// CompoundInput(
-///   principal: 100000,
-///   annualRate: 12,
-///   tenureMonths: 120,
-/// )
-///
-/// // SWP
-/// CompoundInput(
-///   principal: 1000000,
-///   annualRate: 8,
-///   tenureMonths: 240,
-///   withdrawal: WithdrawalConfig(amount: 10000),
-/// )
-///
-/// // Step-up SIP
-/// CompoundInput(
-///   principal: 0,
-///   annualRate: 12,
-///   tenureMonths: 120,
-///   contribution: ContributionConfig(
-///     amount: 5000,
-///     stepUp: PercentageStepUp(10),
-///   ),
-/// )
-/// ```
+
 final class CompoundInput {
   /// One-time initial investment. Use 0 for pure SIP.
   final double principal;
@@ -101,7 +65,7 @@ final class CompoundInput {
     required double principal,
     required double annualRate,
     required int tenureMonths,
-    CompoundFrequency compoundFrequency = CompoundFrequency.monthly,
+    CompoundFrequency compoundFrequency = CompoundFrequency.yearly,
   }) {
     return CompoundInput(
       principal: principal,
@@ -180,9 +144,8 @@ final class CompoundInput {
       annualRate: annualRate ?? this.annualRate,
       tenureMonths: tenureMonths ?? this.tenureMonths,
       compoundFrequency: compoundFrequency ?? this.compoundFrequency,
-      contribution: clearContribution
-          ? null
-          : (contribution ?? this.contribution),
+      contribution:
+          clearContribution ? null : (contribution ?? this.contribution),
       withdrawal: clearWithdrawal ? null : (withdrawal ?? this.withdrawal),
     );
   }
