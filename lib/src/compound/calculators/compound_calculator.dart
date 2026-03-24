@@ -47,6 +47,19 @@ class CompoundCalculator
 
   @override
   CompoundResult calculate(CompoundInput input) {
+    if (input.principal < 0) {
+      throw ArgumentError.value(
+        input.principal, 'principal', 'Must be >= 0');
+    }
+    if (input.annualRate < 0) {
+      throw ArgumentError.value(
+        input.annualRate, 'annualRate', 'Must be >= 0');
+    }
+    if (input.tenureMonths <= 0) {
+      throw ArgumentError.value(
+        input.tenureMonths, 'tenureMonths', 'Must be > 0');
+    }
+
     final breakdown = <CompoundBreakdownEntry>[];
     double balance = input.principal;
     double totalInvested = input.principal;
@@ -211,6 +224,32 @@ class CompoundCalculator
     CompoundFrequency compoundFrequency = CompoundFrequency.monthly,
     WithdrawalConfig? withdrawal,
   }) {
+    if (targetAmount <= 0) {
+      throw ArgumentError.value(
+        targetAmount, 'targetAmount', 'Must be > 0');
+    }
+    if (principal < 0) {
+      throw ArgumentError.value(principal, 'principal', 'Must be >= 0');
+    }
+    if (annualRate < 0) {
+      throw ArgumentError.value(annualRate, 'annualRate', 'Must be >= 0');
+    }
+    if (tenureMonths <= 0) {
+      throw ArgumentError.value(tenureMonths, 'tenureMonths', 'Must be > 0');
+    }
+
+    // Check if target is already met by principal alone
+    final lumpsumResult = calculate(
+      CompoundInput(
+        principal: principal,
+        annualRate: annualRate,
+        tenureMonths: tenureMonths,
+        compoundFrequency: compoundFrequency,
+        withdrawal: withdrawal,
+      ),
+    );
+    if (lumpsumResult.maturityAmount >= targetAmount) return 0;
+
     double low = 0;
     double high = targetAmount;
     double mid = 0;
@@ -250,6 +289,17 @@ class CompoundCalculator
     ContributionConfig? contribution,
     WithdrawalConfig? withdrawal,
   }) {
+    if (targetAmount <= 0) {
+      throw ArgumentError.value(
+        targetAmount, 'targetAmount', 'Must be > 0');
+    }
+    if (principal < 0) {
+      throw ArgumentError.value(principal, 'principal', 'Must be >= 0');
+    }
+    if (tenureMonths <= 0) {
+      throw ArgumentError.value(tenureMonths, 'tenureMonths', 'Must be > 0');
+    }
+
     CompoundResult maturityAt(double annualRate) => calculate(
       CompoundInput(
         principal: principal,
@@ -279,6 +329,24 @@ class CompoundCalculator
     ContributionConfig? contribution,
     WithdrawalConfig? withdrawal,
   }) {
+    if (targetAmount <= 0) {
+      throw ArgumentError.value(
+        targetAmount, 'targetAmount', 'Must be > 0');
+    }
+    if (principal < 0) {
+      throw ArgumentError.value(principal, 'principal', 'Must be >= 0');
+    }
+    if (annualRate < 0) {
+      throw ArgumentError.value(annualRate, 'annualRate', 'Must be >= 0');
+    }
+
+    // If rate is 0 and no contributions, target may be unreachable
+    if (annualRate == 0 && contribution == null && principal < targetAmount) {
+      throw ArgumentError(
+        'Target amount ($targetAmount) is unreachable: '
+        'rate is 0% and no contributions are configured');
+    }
+
     int low = 1;
     int high = 1200; // 100 years upper bound
 

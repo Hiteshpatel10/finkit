@@ -27,6 +27,16 @@ class FlatEmiCalculator
     required double annualRate,
     required int tenureMonths,
   }) {
+    if (principal < 0) {
+      throw ArgumentError.value(principal, 'principal', 'Must be >= 0');
+    }
+    if (annualRate < 0) {
+      throw ArgumentError.value(annualRate, 'annualRate', 'Must be >= 0');
+    }
+    if (tenureMonths <= 0) {
+      throw ArgumentError.value(tenureMonths, 'tenureMonths', 'Must be > 0');
+    }
+
     final years = _years(tenureMonths);
     final interest = principal * _rate(annualRate) * years;
     return (principal + interest) / tenureMonths;
@@ -42,6 +52,16 @@ class FlatEmiCalculator
     required double annualRate,
     required double emi,
   }) {
+    if (principal < 0) {
+      throw ArgumentError.value(principal, 'principal', 'Must be >= 0');
+    }
+    if (annualRate < 0) {
+      throw ArgumentError.value(annualRate, 'annualRate', 'Must be >= 0');
+    }
+    if (emi <= 0) {
+      throw ArgumentError.value(emi, 'emi', 'Must be > 0');
+    }
+
     final r = _rate(annualRate);
     final denominator = emi - (principal * r / 12);
 
@@ -64,6 +84,16 @@ class FlatEmiCalculator
     required int tenureMonths,
     required double emi,
   }) {
+    if (annualRate < 0) {
+      throw ArgumentError.value(annualRate, 'annualRate', 'Must be >= 0');
+    }
+    if (tenureMonths <= 0) {
+      throw ArgumentError.value(tenureMonths, 'tenureMonths', 'Must be > 0');
+    }
+    if (emi <= 0) {
+      throw ArgumentError.value(emi, 'emi', 'Must be > 0');
+    }
+
     final years = _years(tenureMonths);
     final r = _rate(annualRate);
     return emi * tenureMonths / (1 + r * years);
@@ -79,6 +109,16 @@ class FlatEmiCalculator
     required double emi,
     required int tenureMonths,
   }) {
+    if (principal <= 0) {
+      throw ArgumentError.value(principal, 'principal', 'Must be > 0');
+    }
+    if (emi <= 0) {
+      throw ArgumentError.value(emi, 'emi', 'Must be > 0');
+    }
+    if (tenureMonths <= 0) {
+      throw ArgumentError.value(tenureMonths, 'tenureMonths', 'Must be > 0');
+    }
+
     try {
       return _closedForm(principal, emi, tenureMonths);
     } catch (_) {
@@ -162,10 +202,33 @@ class FlatEmiCalculator
   // Principal repaid each month = EMI − fixed monthly interest.
   @override
   List<AmortizationEntry> generateReport(Loan loan) {
-    final entries = <AmortizationEntry>[];
+    if (loan.principal <= 0) {
+      throw ArgumentError.value(
+        loan.principal,
+        'loan.principal',
+        'Must be > 0',
+      );
+    }
+    if (loan.tenureMonths <= 0) {
+      throw ArgumentError.value(
+        loan.tenureMonths,
+        'loan.tenureMonths',
+        'Must be > 0',
+      );
+    }
+
     final r = _rate(loan.annualRate);
-    final monthlyInterest = loan.principal * r / 12; // fixed every month
+    final monthlyInterest = loan.principal * r / 12;
     final monthlyPrincipal = loan.emi - monthlyInterest;
+
+    if (monthlyPrincipal <= 0) {
+      throw ArgumentError(
+        'EMI (${loan.emi}) must exceed the monthly interest '
+        '(${monthlyInterest.toStringAsFixed(2)}) to repay the loan',
+      );
+    }
+
+    final entries = <AmortizationEntry>[];
     double balance = loan.principal;
 
     for (int i = 1; i <= loan.tenureMonths; i++) {

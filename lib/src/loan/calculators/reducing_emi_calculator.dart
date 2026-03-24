@@ -37,6 +37,16 @@ class ReducingEmiCalculator
     required double annualRate,
     required int tenureMonths,
   }) {
+    if (principal < 0) {
+      throw ArgumentError.value(principal, 'principal', 'Must be >= 0');
+    }
+    if (annualRate < 0) {
+      throw ArgumentError.value(annualRate, 'annualRate', 'Must be >= 0');
+    }
+    if (tenureMonths <= 0) {
+      throw ArgumentError.value(tenureMonths, 'tenureMonths', 'Must be > 0');
+    }
+
     final r = _monthlyRate(annualRate);
 
     if (r == 0) return principal / tenureMonths;
@@ -58,6 +68,16 @@ class ReducingEmiCalculator
     required double annualRate,
     required double emi,
   }) {
+    if (principal < 0) {
+      throw ArgumentError.value(principal, 'principal', 'Must be >= 0');
+    }
+    if (annualRate < 0) {
+      throw ArgumentError.value(annualRate, 'annualRate', 'Must be >= 0');
+    }
+    if (emi <= 0) {
+      throw ArgumentError.value(emi, 'emi', 'Must be > 0');
+    }
+
     final r = _monthlyRate(annualRate);
 
     if (r == 0) return (principal / emi).ceil();
@@ -85,6 +105,16 @@ class ReducingEmiCalculator
     required int tenureMonths,
     required double emi,
   }) {
+    if (annualRate < 0) {
+      throw ArgumentError.value(annualRate, 'annualRate', 'Must be >= 0');
+    }
+    if (tenureMonths <= 0) {
+      throw ArgumentError.value(tenureMonths, 'tenureMonths', 'Must be > 0');
+    }
+    if (emi <= 0) {
+      throw ArgumentError.value(emi, 'emi', 'Must be > 0');
+    }
+
     final r = _monthlyRate(annualRate);
 
     if (r == 0) return emi * tenureMonths;
@@ -105,6 +135,16 @@ class ReducingEmiCalculator
     required double emi,
     required int tenureMonths,
   }) {
+    if (principal <= 0) {
+      throw ArgumentError.value(principal, 'principal', 'Must be > 0');
+    }
+    if (emi <= 0) {
+      throw ArgumentError.value(emi, 'emi', 'Must be > 0');
+    }
+    if (tenureMonths <= 0) {
+      throw ArgumentError.value(tenureMonths, 'tenureMonths', 'Must be > 0');
+    }
+
     try {
       return _newtonRaphson(principal, emi, tenureMonths);
     } catch (_) {
@@ -192,9 +232,25 @@ class ReducingEmiCalculator
   //   closing   = opening − principal
   @override
   List<AmortizationEntry> generateReport(Loan loan) {
+    if (loan.principal <= 0) {
+      throw ArgumentError.value(
+        loan.principal, 'loan.principal', 'Must be > 0');
+    }
+    if (loan.tenureMonths <= 0) {
+      throw ArgumentError.value(
+        loan.tenureMonths, 'loan.tenureMonths', 'Must be > 0');
+    }
+
+    final r = _monthlyRate(loan.annualRate);
+    final firstMonthInterest = loan.principal * r;
+    if (loan.emi <= firstMonthInterest) {
+      throw ArgumentError(
+        'EMI (${loan.emi}) must exceed the first month\'s interest '
+        '(${firstMonthInterest.toStringAsFixed(2)}) to repay the loan');
+    }
+
     final entries = <AmortizationEntry>[];
     double balance = loan.principal;
-    final r = _monthlyRate(loan.annualRate);
 
     for (int i = 1; i <= loan.tenureMonths; i++) {
       final interest = balance * r;
@@ -208,7 +264,7 @@ class ReducingEmiCalculator
           emi: loan.emi,
           interest: interest,
           principal: principal,
-          closingBalance: balance,
+          closingBalance: balance < 0 ? 0 : balance,
         ),
       );
     }
