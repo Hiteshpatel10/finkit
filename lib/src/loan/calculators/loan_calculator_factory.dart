@@ -5,7 +5,7 @@ import 'package:finkit/src/loan/calculators/reducing_emi_calculator.dart';
 import 'package:finkit/src/loan/calculators/loan_interfaces.dart';
 import 'package:finkit/src/loan/models/loan.dart';
 
-class LoanCalculatorFactory implements CalculatorFactory<LoanType> {
+final class LoanCalculatorFactory implements CalculatorFactory<LoanType> {
   final Map<LoanType, CapabilityProvider> _providers = {};
 
   LoanCalculatorFactory() {

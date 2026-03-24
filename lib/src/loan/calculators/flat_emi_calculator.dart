@@ -6,7 +6,7 @@ import 'package:finkit/src/loan/models/loan.dart';
 // Total interest = P × r × years is fixed upfront and divided equally
 // across all months — simpler but more expensive than reducing balance.
 
-class FlatEmiCalculator
+final class FlatEmiCalculator
     implements
         EmiSolver,
         TenureSolver,

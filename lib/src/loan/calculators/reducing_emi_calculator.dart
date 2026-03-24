@@ -7,7 +7,7 @@ import 'package:finkit/src/loan/models/loan.dart';
 // each month on the OUTSTANDING principal, not the original amount.
 // This results in a lower total interest cost compared to flat rate loans.
 
-class ReducingEmiCalculator
+final class ReducingEmiCalculator
     implements
         EmiSolver,
         TenureSolver,

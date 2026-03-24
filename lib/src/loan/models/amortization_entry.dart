@@ -1,7 +1,7 @@
 /// A single row in a loan amortization schedule.
 ///
 /// Each entry represents one month's payment breakdown.
-class AmortizationEntry {
+final class AmortizationEntry {
   final int month;
   final double openingBalance;
   final double emi;

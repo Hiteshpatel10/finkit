@@ -12,10 +12,11 @@ topics:
   - compound-interest
   
 version: 1.0.0
-# repository: https://github.com/my_org/my_repo
+repository: https://github.com/Hiteshpatel10/finkit
+homepage: https://github.com/Hiteshpatel10/finkit
 
 environment:
-  sdk: ^3.8.1
+  sdk: ^3.4.0
 
 # Add regular dependencies here.
 dependencies:

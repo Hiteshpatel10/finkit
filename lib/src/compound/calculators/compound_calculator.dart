@@ -37,7 +37,7 @@ import 'compound_interfaces.dart';
 /// **Withdrawal** ([WithdrawalConfig]):
 ///   - Applied end-of-period, after interest
 ///   - If balance would go negative, corpus is exhausted and simulation stops
-class CompoundCalculator
+final class CompoundCalculator
     implements
         CompoundMaturitySolver,
         CompoundContributionSolver,

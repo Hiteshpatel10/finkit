@@ -69,7 +69,7 @@ class PercentageWithdrawalStepUp extends WithdrawalStepUp {
 ///   stepUp: PercentageWithdrawalStepUp(5),
 /// )
 /// ```
-class WithdrawalConfig {
+final class WithdrawalConfig {
   /// Amount to withdraw per [frequency] period.
   final double amount;
 

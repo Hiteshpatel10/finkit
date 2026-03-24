@@ -1,5 +1,5 @@
 /// A single period's snapshot within the compound interest simulation.
-class CompoundBreakdownEntry {
+final class CompoundBreakdownEntry {
   /// Compounding period number (1-based).
   final int period;
 
@@ -49,7 +49,7 @@ class CompoundBreakdownEntry {
 }
 
 /// The final output of a compound interest calculation.
-class CompoundResult {
+final class CompoundResult {
   /// Final corpus value at the end of the tenure.
   /// Will be 0 if the corpus was exhausted by withdrawals before the tenure ended.
   final double maturityAmount;

@@ -5,7 +5,7 @@ enum LoanType { reducing, flat }
 /// Immutable value object representing a fully configured loan.
 ///
 /// Use [copyWith] to produce updated instances — never mutate directly.
-class Loan {
+final class Loan {
   final double principal;
   final double annualRate;
   final int tenureMonths;

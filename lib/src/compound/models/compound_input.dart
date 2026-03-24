@@ -52,7 +52,7 @@ import 'withdrawal_config.dart';
 ///   ),
 /// )
 /// ```
-class CompoundInput {
+final class CompoundInput {
   /// One-time initial investment. Use 0 for pure SIP.
   final double principal;
 
@@ -79,6 +79,91 @@ class CompoundInput {
     this.contribution,
     this.withdrawal,
   });
+
+  /// Creates a pure **SIP** configuration (no initial lumpsum).
+  factory CompoundInput.sip({
+    required double monthlyAmount,
+    required double annualRate,
+    required int tenureMonths,
+    CompoundFrequency compoundFrequency = CompoundFrequency.monthly,
+  }) {
+    return CompoundInput(
+      principal: 0,
+      annualRate: annualRate,
+      tenureMonths: tenureMonths,
+      compoundFrequency: compoundFrequency,
+      contribution: ContributionConfig(amount: monthlyAmount),
+    );
+  }
+
+  /// Creates a pure **lumpsum** configuration (no periodic contributions).
+  factory CompoundInput.lumpsum({
+    required double principal,
+    required double annualRate,
+    required int tenureMonths,
+    CompoundFrequency compoundFrequency = CompoundFrequency.monthly,
+  }) {
+    return CompoundInput(
+      principal: principal,
+      annualRate: annualRate,
+      tenureMonths: tenureMonths,
+      compoundFrequency: compoundFrequency,
+    );
+  }
+
+  /// Creates an **SWP** (Systematic Withdrawal Plan) configuration.
+  factory CompoundInput.swp({
+    required double principal,
+    required double monthlyWithdrawal,
+    required double annualRate,
+    required int tenureMonths,
+    CompoundFrequency compoundFrequency = CompoundFrequency.monthly,
+  }) {
+    return CompoundInput(
+      principal: principal,
+      annualRate: annualRate,
+      tenureMonths: tenureMonths,
+      compoundFrequency: compoundFrequency,
+      withdrawal: WithdrawalConfig(amount: monthlyWithdrawal),
+    );
+  }
+
+  /// Creates a **step-up SIP** configuration (contributions increase over time).
+  factory CompoundInput.stepUpSip({
+    required double monthlyAmount,
+    required double annualRate,
+    required int tenureMonths,
+    required double annualStepUpPercent,
+    CompoundFrequency compoundFrequency = CompoundFrequency.monthly,
+  }) {
+    return CompoundInput(
+      principal: 0,
+      annualRate: annualRate,
+      tenureMonths: tenureMonths,
+      compoundFrequency: compoundFrequency,
+      contribution: ContributionConfig(
+        amount: monthlyAmount,
+        stepUp: PercentageStepUp(annualStepUpPercent),
+      ),
+    );
+  }
+
+  /// Creates a **lumpsum + SIP** configuration (one-time investment with monthly top-ups).
+  factory CompoundInput.lumpsumPlusSip({
+    required double principal,
+    required double monthlyAmount,
+    required double annualRate,
+    required int tenureMonths,
+    CompoundFrequency compoundFrequency = CompoundFrequency.monthly,
+  }) {
+    return CompoundInput(
+      principal: principal,
+      annualRate: annualRate,
+      tenureMonths: tenureMonths,
+      compoundFrequency: compoundFrequency,
+      contribution: ContributionConfig(amount: monthlyAmount),
+    );
+  }
 
   CompoundInput copyWith({
     double? principal,

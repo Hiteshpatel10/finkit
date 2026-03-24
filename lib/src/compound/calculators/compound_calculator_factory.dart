@@ -63,7 +63,7 @@ enum CompoundType {
 /// final contrib  = registry.get<CompoundContributionSolver>()
 ///     .calculateRequiredContribution(targetAmount: 1000000, ...);
 /// ```
-class CompoundCalculatorFactory implements CalculatorFactory<CompoundType> {
+final class CompoundCalculatorFactory implements CalculatorFactory<CompoundType> {
   final Map<CompoundType, CapabilityProvider> _providers = {};
 
   CompoundCalculatorFactory() {

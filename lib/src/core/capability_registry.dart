@@ -9,7 +9,7 @@
 /// final caps = registry.require<EmiSolver>();
 /// final emi  = caps.calculateEmi(...);
 /// ```
-class CapabilityRegistry {
+final class CapabilityRegistry {
   final Map<Type, Object> _registry;
 
   const CapabilityRegistry(this._registry);

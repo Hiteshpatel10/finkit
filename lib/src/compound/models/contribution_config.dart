@@ -25,7 +25,7 @@ import 'package:finkit/src/compound/models/payment_config.dart';
 ///   stepUp: FixedStepUp(500, stepUpFrequency: ContributionFrequency.semiAnnually),
 /// )
 /// ```
-class ContributionConfig {
+final class ContributionConfig {
   /// Amount to contribute per [frequency] period.
   final double amount;
 
