@@ -17,7 +17,20 @@ export 'src/compound/calculators/compound_calculator_factory.dart';
 // Loan – models
 export 'src/loan/models/loan.dart';
 export 'src/loan/models/amortization_entry.dart';
+export 'src/loan/models/loan_fees.dart';
+export 'src/loan/models/prepayment_config.dart';
+export 'src/loan/models/prepayment_result.dart';
 
 // Loan – calculators
 export 'src/loan/calculators/loan_interfaces.dart';
 export 'src/loan/calculators/loan_calculator_factory.dart';
+export 'src/loan/calculators/prepayment_calculator.dart';
+
+// GST – models
+export 'src/gst/models/gst_calculation_type.dart';
+export 'src/gst/models/gst_result.dart';
+
+// GST – calculators
+export 'src/gst/calculators/gst_interfaces.dart';
+export 'src/gst/calculators/gst_calculator.dart';
+export 'src/gst/calculators/gst_calculator_factory.dart';

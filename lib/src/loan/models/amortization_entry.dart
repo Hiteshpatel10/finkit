@@ -7,6 +7,8 @@ final class AmortizationEntry {
   final double emi;
   final double interest;
   final double principal;
+  final double prepayment;
+  final double extraCharges;
   final double closingBalance;
 
   const AmortizationEntry({
@@ -15,6 +17,8 @@ final class AmortizationEntry {
     required this.emi,
     required this.interest,
     required this.principal,
+    this.prepayment = 0,
+    this.extraCharges = 0,
     required this.closingBalance,
   });
 }
