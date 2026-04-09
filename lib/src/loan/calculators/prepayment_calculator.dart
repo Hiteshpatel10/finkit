@@ -1,3 +1,4 @@
+import 'dart:math';
 import 'package:finkit/src/loan/models/amortization_entry.dart';
 import 'package:finkit/src/loan/models/loan.dart';
 import 'package:finkit/src/loan/models/prepayment_config.dart';
@@ -20,34 +21,43 @@ final class PrepaymentCalculator {
     final entries = <AmortizationEntry>[];
 
     double balance = loan.principal;
+    double currentEmi = loan.emi;
     int month = 1;
 
     // We simulate month by month until balance is zero or tenure is reached.
-    // Standard tenure is a safety bound, but prepayments will shorten it.
     while (balance > 0.01 && month <= 1000) {
-      // 1000 months safety cap
       final interest = balance * r;
 
       // Regular EMI part
-      double principalRepaid = loan.emi - interest;
+      double principalRepaid = currentEmi - interest;
 
       // Edge case: if remaining balance + interest is LESS than EMI
-      if (balance + interest < loan.emi) {
+      if (balance + interest < currentEmi) {
         principalRepaid = balance;
       }
 
       // Prepayment part
       double extraPaid = 0;
+      bool shouldRecalculateEmi = false;
+
       for (final config in prepayments) {
+        bool isTriggered = false;
         if (config.type == PrepaymentType.oneTime) {
-          if (config.month == month) extraPaid += config.amount;
+          if (config.month == month) isTriggered = true;
         } else {
           // Recurring
           if (month >= config.month) {
             if (config.durationMonths == null ||
                 month < (config.month + config.durationMonths!)) {
-              extraPaid += config.amount;
+              isTriggered = true;
             }
+          }
+        }
+
+        if (isTriggered) {
+          extraPaid += config.amount;
+          if (config.strategy == PrepaymentStrategy.emiReduction) {
+            shouldRecalculateEmi = true;
           }
         }
       }
@@ -56,9 +66,6 @@ final class PrepaymentCalculator {
       double extraCharges = 0;
       bool isForeclosed = false;
       if (foreclosure != null && month == foreclosure.month) {
-        // Outstanding balance before this month's principal repayment is 'balance'
-        // But usually foreclosure happens ON TOP of regular EMI or INSTEAD of it.
-        // We'll treat it as: regular EMI happens, then the REST is paid off.
         extraPaid = (balance - principalRepaid);
         extraCharges = extraPaid * (foreclosure.feePercentage / 100);
         isForeclosed = true;
@@ -88,6 +95,14 @@ final class PrepaymentCalculator {
       if (isForeclosed) break;
       if (balance < 0.01) break;
 
+      // If strategy were EMI reduction, recalculate for NEXT month
+      if (shouldRecalculateEmi && balance > 0) {
+        final remainingTenure = loan.tenureMonths - month;
+        if (remainingTenure > 0) {
+          currentEmi = _recalculateEmi(balance, r, remainingTenure);
+        }
+      }
+
       month++;
     }
 
@@ -108,6 +123,11 @@ final class PrepaymentCalculator {
       foreclosureFees: totalForeclosureFees,
       netSavings: interestSaved - totalForeclosureFees,
     );
+  }
+
+  double _recalculateEmi(double p, double r, int n) {
+    if (r == 0) return p / n;
+    return (p * r * pow(1 + r, n)) / (pow(1 + r, n) - 1);
   }
 
   /// Calculates net disbursement after deducting fees.

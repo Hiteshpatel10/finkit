@@ -1,12 +1,21 @@
 enum PrepaymentType { oneTime, recurring }
 
+enum PrepaymentStrategy {
+  /// Keep the EMI constant, reducing the loan tenure.
+  tenureReduction,
+
+  /// Recalculate EMI to keep the original tenure.
+  emiReduction,
+}
+
 /// Configuration for a specific extra payment.
 final class PrepaymentConfig {
   final double amount;
   final int month;
   final PrepaymentType type;
-  
-  /// For recurring, how many months it should last. 
+  final PrepaymentStrategy strategy;
+
+  /// For recurring, how many months it should last.
   /// If null, lasts until loan ends.
   final int? durationMonths;
 
@@ -14,6 +23,7 @@ final class PrepaymentConfig {
     required this.amount,
     required this.month,
     this.type = PrepaymentType.oneTime,
+    this.strategy = PrepaymentStrategy.tenureReduction,
     this.durationMonths,
   });
 }

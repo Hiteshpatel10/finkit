@@ -25,6 +25,10 @@ export 'src/loan/models/prepayment_result.dart';
 export 'src/loan/calculators/loan_interfaces.dart';
 export 'src/loan/calculators/loan_calculator_factory.dart';
 export 'src/loan/calculators/prepayment_calculator.dart';
+export 'src/loan/calculators/foreclosure_planner.dart';
+
+// Loan – models (Planner)
+export 'src/loan/models/foreclosure_planner_models.dart';
 
 // GST – models
 export 'src/gst/models/gst_calculation_type.dart';
