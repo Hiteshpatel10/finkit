@@ -95,11 +95,16 @@ final class PrepaymentCalculator {
       if (isForeclosed) break;
       if (balance < 0.01) break;
 
-      // If strategy were EMI reduction, recalculate for NEXT month
+      // If strategy is EMI reduction, recalculate EMI for NEXT month.
+      // Remaining tenure = original tenure minus months already paid.
+      // EMI drops so the loan still finishes around the original end date.
       if (shouldRecalculateEmi && balance > 0) {
         final remainingTenure = loan.tenureMonths - month;
         if (remainingTenure > 0) {
           currentEmi = _recalculateEmi(balance, r, remainingTenure);
+        } else {
+          // Safety: if somehow we're past original tenure, just pay off balance
+          currentEmi = balance + (balance * r);
         }
       }
 
@@ -112,14 +117,21 @@ final class PrepaymentCalculator {
     );
 
     final double totalForeclosureFees =
-        entries.fold(0, (sum, e) => sum + e.extraCharges);
-    final double interestSaved = loan.totalInterest - prepaidLoan.totalInterest;
+        entries.fold(0.0, (sum, e) => sum + e.extraCharges);
+
+    // IMPORTANT: For EMI reduction strategy the EMI changes each month, so
+    // `prepaidLoan.totalInterest` (which uses emi × n) would be wrong.
+    // Always derive actual interest from the amortization schedule entries.
+    final double actualInterestPaid =
+        entries.fold(0.0, (sum, e) => sum + e.interest);
+    final double interestSaved = loan.totalInterest - actualInterestPaid;
+    final int monthsSaved = loan.tenureMonths - entries.length;
 
     return PrepaymentResult(
       originalLoan: loan,
       prepaidLoan: prepaidLoan,
       interestSaved: interestSaved,
-      monthsSaved: loan.tenureMonths - prepaidLoan.tenureMonths,
+      monthsSaved: monthsSaved,
       foreclosureFees: totalForeclosureFees,
       netSavings: interestSaved - totalForeclosureFees,
     );
