@@ -1,3 +1,5 @@
+import 'dart:math';
+
 import 'package:finkit/src/compound/models/compound_frequency.dart';
 import 'package:finkit/src/compound/models/compound_input.dart';
 import 'package:finkit/src/compound/models/compound_result.dart';
@@ -65,47 +67,39 @@ final class CompoundCalculator
     double totalInvested = input.principal;
     double totalWithdrawn = 0;
 
-    final double periodicRate =
-        (input.annualRate / 100) / input.compoundFrequency.periodsPerYear;
+    // We iterate exactly tenureMonths times, ensuring 1 entry per month
+    // This fixes the bug where non-monthly compounding drops monthly deposits.
+    final int totalMonths = input.tenureMonths;
 
-    final int totalPeriods = _totalCompoundPeriods(
-      tenureMonths: input.tenureMonths,
-      compoundFrequency: input.compoundFrequency,
-    );
+    double uncompoundedInterest = 0;
+    
+    // Determine when compounding happens
+    final int compoundIntervalMonths = 12 ~/ input.compoundFrequency.periodsPerYear;
 
-    // Unpack contribution config — null means no contributions
+    final bool isDaily = input.compoundFrequency == CompoundFrequency.daily;
+    final double dailyRate = isDaily ? (input.annualRate / 100) / 365 : 0;
+    final double monthlySimpleRate = (input.annualRate / 100) / 12;
+
+    // Unpack contribution config
     final contrib = input.contribution;
-    final double periodsPerContribution = contrib != null
-        ? input.compoundFrequency.periodsPerYear /
-              contrib.frequency.periodsPerYear
-        : double.infinity;
-
-    // Unpack withdrawal config — null means no withdrawals
+    // Unpack withdrawal config
     final withdrawal = input.withdrawal;
-    final double periodsPerWithdrawal = withdrawal != null
-        ? input.compoundFrequency.periodsPerYear /
-              withdrawal.frequency.periodsPerYear
-        : double.infinity;
 
     // Mutable amounts — mutated by step-up logic each cycle
     double currentContribution = contrib?.amount ?? 0;
     double currentWithdrawal = withdrawal?.amount ?? 0;
 
-    // Track fired step-up event counts to detect new cycles
     int contributionStepUpCount = 0;
     int withdrawalStepUpCount = 0;
 
-    for (int period = 1; period <= totalPeriods; period++) {
-      final int year = _yearOf(period, input.compoundFrequency);
-      final double opening = balance;
+    for (int month = 1; month <= totalMonths; month++) {
+      final int year = ((month - 1) ~/ 12) + 1;
+      final double opening = balance + (isDaily ? 0 : uncompoundedInterest);
 
       // ── Contribution step-up ──────────────────────────────────────────────
       if (contrib != null && contrib.stepUp != null) {
-        final int newCount = _stepUpEventCount(
-          period: period,
-          compoundFrequency: input.compoundFrequency,
-          stepUpFrequency: contrib.stepUp!.stepUpFrequency,
-        );
+        final int stepUpMonths = 12 ~/ contrib.stepUp!.stepUpFrequency.periodsPerYear;
+        final int newCount = (month - 1) ~/ stepUpMonths;
         if (newCount > contributionStepUpCount) {
           contributionStepUpCount = newCount;
           switch (contrib.stepUp) {
@@ -121,11 +115,8 @@ final class CompoundCalculator
 
       // ── Withdrawal step-up ────────────────────────────────────────────────
       if (withdrawal != null && withdrawal.stepUp != null) {
-        final int newCount = _stepUpEventCount(
-          period: period,
-          compoundFrequency: input.compoundFrequency,
-          stepUpFrequency: withdrawal.stepUp!.stepUpFrequency,
-        );
+        final int stepUpMonths = 12 ~/ withdrawal.stepUp!.stepUpFrequency.periodsPerYear;
+        final int newCount = (month - 1) ~/ stepUpMonths;
         if (newCount > withdrawalStepUpCount) {
           withdrawalStepUpCount = newCount;
           switch (withdrawal.stepUp) {
@@ -140,14 +131,8 @@ final class CompoundCalculator
       }
 
       // ── Period flags ──────────────────────────────────────────────────────
-      final bool hasContribution =
-          contrib != null &&
-          _isContributionPeriod(period, periodsPerContribution);
-
-      final bool hasWithdrawal =
-          withdrawal != null &&
-          currentWithdrawal > 0 &&
-          _isContributionPeriod(period, periodsPerWithdrawal);
+      final bool hasContribution = contrib != null && (month - 1) % (12 ~/ contrib.frequency.periodsPerYear) == 0;
+      final bool hasWithdrawal = withdrawal != null && currentWithdrawal > 0 && (month - 1) % (12 ~/ withdrawal.frequency.periodsPerYear) == 0;
 
       // ── Annuity-due: contribute BEFORE interest ───────────────────────────
       double contributionThisPeriod = 0;
@@ -158,8 +143,22 @@ final class CompoundCalculator
       }
 
       // ── Compound interest ─────────────────────────────────────────────────
-      final double interest = balance * periodicRate;
-      balance += interest;
+      double interestForMonth = 0;
+      if (isDaily) {
+         final days = 365 / 12; // average days per month
+         final effectiveMultiplier = pow(1 + dailyRate, days) - 1;
+         interestForMonth = balance * effectiveMultiplier;
+         balance += interestForMonth;
+      } else {
+         interestForMonth = balance * monthlySimpleRate;
+         uncompoundedInterest += interestForMonth;
+         
+         // Compounding boundary
+         if (month % compoundIntervalMonths == 0) {
+            balance += uncompoundedInterest;
+            uncompoundedInterest = 0;
+         }
+      }
 
       // ── Ordinary annuity: contribute AFTER interest ───────────────────────
       if (hasContribution && contrib.timing == PaymentTiming.end) {
@@ -172,25 +171,38 @@ final class CompoundCalculator
       double withdrawalThisPeriod = 0;
       bool exhausted = false;
       if (hasWithdrawal) {
-        if (currentWithdrawal >= balance) {
-          withdrawalThisPeriod = balance;
+        double effectiveBalance = balance + (isDaily ? 0 : uncompoundedInterest);
+        if (currentWithdrawal >= effectiveBalance) {
+          withdrawalThisPeriod = effectiveBalance;
           exhausted = true;
         } else {
           withdrawalThisPeriod = currentWithdrawal;
         }
         totalWithdrawn += withdrawalThisPeriod;
-        balance -= withdrawalThisPeriod;
+        
+        // Deduct from uncompounded interest first, then balance
+        if (!isDaily) {
+          if (withdrawalThisPeriod <= uncompoundedInterest) {
+            uncompoundedInterest -= withdrawalThisPeriod;
+          } else {
+            double remaining = withdrawalThisPeriod - uncompoundedInterest;
+            uncompoundedInterest = 0;
+            balance -= remaining;
+          }
+        } else {
+          balance -= withdrawalThisPeriod;
+        }
       }
 
       breakdown.add(
         CompoundBreakdownEntry(
-          period: period,
+          period: month, // period is always month now
           year: year,
           openingBalance: opening,
           contributionThisPeriod: contributionThisPeriod,
-          interestThisPeriod: interest,
+          interestThisPeriod: interestForMonth,
           withdrawalThisPeriod: withdrawalThisPeriod,
-          closingBalance: balance,
+          closingBalance: balance + (isDaily ? 0 : uncompoundedInterest),
           cumulativeInvested: totalInvested,
           cumulativeWithdrawn: totalWithdrawn,
           balanceExhausted: exhausted,
@@ -198,6 +210,12 @@ final class CompoundCalculator
       );
 
       if (exhausted) break;
+    }
+
+    // Force final compounding at maturity if not already compounded
+    if (!isDaily && uncompoundedInterest > 0) {
+       balance += uncompoundedInterest;
+       uncompoundedInterest = 0;
     }
 
     return CompoundResult(
@@ -431,36 +449,4 @@ final class CompoundCalculator
     return mid;
   }
 
-  // ─── Private: Period Helpers ──────────────────────────────────────────────────
-
-  int _totalCompoundPeriods({
-    required int tenureMonths,
-    required CompoundFrequency compoundFrequency,
-  }) {
-    return ((tenureMonths / 12) * compoundFrequency.periodsPerYear).round();
-  }
-
-  int _yearOf(int period, CompoundFrequency compoundFrequency) {
-    return ((period - 1) / compoundFrequency.periodsPerYear).floor() + 1;
-  }
-
-  /// How many step-up events have fired by the start of [period].
-  ///
-  /// Fires once per completed step-up cycle (first event at start of cycle 2).
-  int _stepUpEventCount({
-    required int period,
-    required CompoundFrequency compoundFrequency,
-    required PaymentFrequency stepUpFrequency,
-  }) {
-    final double periodsPerStepUp =
-        compoundFrequency.periodsPerYear / stepUpFrequency.periodsPerYear;
-    return ((period - 1) / periodsPerStepUp).floor();
-  }
-
-  /// Whether a contribution/withdrawal should occur on this compounding period.
-  bool _isContributionPeriod(int period, double periodsPerContribution) {
-    final expected = (period / periodsPerContribution).round();
-    final previous = ((period - 1) / periodsPerContribution).round();
-    return expected != previous;
-  }
 }
