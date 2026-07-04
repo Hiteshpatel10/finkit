@@ -84,3 +84,21 @@ export 'src/ppf/models/ppf_result.dart';
 export 'src/ppf/calculators/ppf_interfaces.dart';
 export 'src/ppf/calculators/ppf_calculator.dart';
 export 'src/ppf/calculators/ppf_calculator_factory.dart';
+
+// EPF – models
+export 'src/epf/models/epf_input.dart';
+export 'src/epf/models/epf_result.dart';
+
+// EPF – calculators
+export 'src/epf/calculators/epf_interfaces.dart';
+export 'src/epf/calculators/epf_calculator.dart';
+export 'src/epf/calculators/epf_calculator_factory.dart';
+
+// NPS – models
+export 'src/nps/models/nps_input.dart';
+export 'src/nps/models/nps_result.dart';
+
+// NPS – calculators
+export 'src/nps/calculators/nps_interfaces.dart';
+export 'src/nps/calculators/nps_calculator.dart';
+export 'src/nps/calculators/nps_calculator_factory.dart';
