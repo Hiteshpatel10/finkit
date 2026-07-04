@@ -55,3 +55,12 @@ export 'src/inflation/models/inflation_result.dart';
 export 'src/inflation/calculators/inflation_interfaces.dart';
 export 'src/inflation/calculators/inflation_calculator.dart';
 export 'src/inflation/calculators/inflation_calculator_factory.dart';
+
+// HRA – models
+export 'src/hra/models/city_type.dart';
+export 'src/hra/models/hra_result.dart';
+
+// HRA – calculators
+export 'src/hra/calculators/hra_interfaces.dart';
+export 'src/hra/calculators/hra_calculator.dart';
+export 'src/hra/calculators/hra_calculator_factory.dart';
