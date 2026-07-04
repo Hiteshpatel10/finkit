@@ -29,6 +29,9 @@ final class CompoundInput {
   /// How often interest is compounded per year.
   final CompoundFrequency compoundFrequency;
 
+  /// Custom number of compounding periods per year (used if compoundFrequency is custom).
+  final int? customCompoundPeriods;
+
   /// Periodic contribution config. Null means no contributions (pure lumpsum / SWP).
   final ContributionConfig? contribution;
 
@@ -40,6 +43,7 @@ final class CompoundInput {
     required this.annualRate,
     required this.tenureMonths,
     this.compoundFrequency = CompoundFrequency.monthly,
+    this.customCompoundPeriods,
     this.contribution,
     this.withdrawal,
   });
@@ -56,6 +60,7 @@ final class CompoundInput {
       annualRate: annualRate,
       tenureMonths: tenureMonths,
       compoundFrequency: compoundFrequency,
+      customCompoundPeriods: null,
       contribution: ContributionConfig(amount: monthlyAmount),
     );
   }
@@ -72,6 +77,7 @@ final class CompoundInput {
       annualRate: annualRate,
       tenureMonths: tenureMonths,
       compoundFrequency: compoundFrequency,
+      customCompoundPeriods: null,
     );
   }
 
@@ -88,6 +94,7 @@ final class CompoundInput {
       annualRate: annualRate,
       tenureMonths: tenureMonths,
       compoundFrequency: compoundFrequency,
+      customCompoundPeriods: null,
       withdrawal: WithdrawalConfig(amount: monthlyWithdrawal),
     );
   }
@@ -105,6 +112,7 @@ final class CompoundInput {
       annualRate: annualRate,
       tenureMonths: tenureMonths,
       compoundFrequency: compoundFrequency,
+      customCompoundPeriods: null,
       contribution: ContributionConfig(
         amount: monthlyAmount,
         stepUp: PercentageStepUp(annualStepUpPercent),
@@ -125,6 +133,7 @@ final class CompoundInput {
       annualRate: annualRate,
       tenureMonths: tenureMonths,
       compoundFrequency: compoundFrequency,
+      customCompoundPeriods: null,
       contribution: ContributionConfig(amount: monthlyAmount),
     );
   }
@@ -134,6 +143,7 @@ final class CompoundInput {
     double? annualRate,
     int? tenureMonths,
     CompoundFrequency? compoundFrequency,
+    int? customCompoundPeriods,
     ContributionConfig? contribution,
     bool clearContribution = false,
     WithdrawalConfig? withdrawal,
@@ -144,6 +154,7 @@ final class CompoundInput {
       annualRate: annualRate ?? this.annualRate,
       tenureMonths: tenureMonths ?? this.tenureMonths,
       compoundFrequency: compoundFrequency ?? this.compoundFrequency,
+      customCompoundPeriods: customCompoundPeriods ?? this.customCompoundPeriods,
       contribution:
           clearContribution ? null : (contribution ?? this.contribution),
       withdrawal: clearWithdrawal ? null : (withdrawal ?? this.withdrawal),

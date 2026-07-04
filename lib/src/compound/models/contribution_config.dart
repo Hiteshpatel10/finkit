@@ -21,8 +21,8 @@ import 'package:finkit/src/compound/models/payment_config.dart';
 /// // ₹5 000/quarter, +₹500 every 6 months
 /// ContributionConfig(
 ///   amount: 5000,
-///   frequency: ContributionFrequency.quarterly,
-///   stepUp: FixedStepUp(500, stepUpFrequency: ContributionFrequency.semiAnnually),
+///   frequency: PaymentFrequency.quarterly,
+///   stepUp: FixedStepUp(500, stepUpFrequency: StepUpFrequency.halfYearly),
 /// )
 /// ```
 final class ContributionConfig {
@@ -69,10 +69,10 @@ final class ContributionConfig {
 /// Defines how the contribution amount increases over time.
 ///
 /// Both subtypes accept an optional [stepUpFrequency] that controls *how often*
-/// the step-up is applied. Defaults to [PaymentFrequency.yearly].
+/// the step-up is applied. Defaults to [StepUpFrequency.yearly].
 sealed class ContributionStepUp {
-  final PaymentFrequency stepUpFrequency;
-  const ContributionStepUp({this.stepUpFrequency = PaymentFrequency.yearly});
+  final StepUpFrequency stepUpFrequency;
+  const ContributionStepUp({this.stepUpFrequency = StepUpFrequency.yearly});
 }
 
 /// Contribution increases by a fixed amount every [stepUpFrequency] period.
@@ -80,7 +80,7 @@ class FixedStepUp extends ContributionStepUp {
   final double amount;
   const FixedStepUp(
     this.amount, {
-    super.stepUpFrequency = PaymentFrequency.yearly,
+    super.stepUpFrequency = StepUpFrequency.yearly,
   });
 }
 
@@ -89,6 +89,6 @@ class PercentageStepUp extends ContributionStepUp {
   final double percent;
   const PercentageStepUp(
     this.percent, {
-    super.stepUpFrequency = PaymentFrequency.yearly,
+    super.stepUpFrequency = StepUpFrequency.yearly,
   });
 }

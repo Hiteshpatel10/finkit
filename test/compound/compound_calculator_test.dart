@@ -62,6 +62,53 @@ void main() {
         expect(result.maturityAmount, greaterThan(1161695));
       });
 
+      test('High frequency compounding (Weekly) does not crash', () {
+        final result = calc.calculate(CompoundInput(
+          principal: 100000,
+          annualRate: 12,
+          tenureMonths: 12, // 1 year
+          compoundFrequency: CompoundFrequency.weekly,
+        ));
+
+        // 100000 * (1 + 0.12/52)^52 ≈ 112734
+        expect(result.maturityAmount, closeTo(112734.0, 5.0));
+      });
+
+      test('High frequency deposits (Weekly SIP) calculate correctly', () {
+        final result = calc.calculate(CompoundInput(
+          principal: 0,
+          annualRate: 12,
+          tenureMonths: 12, // 1 year
+          compoundFrequency: CompoundFrequency.monthly,
+          contribution: ContributionConfig(
+            amount: 1000,
+            frequency: PaymentFrequency.weekly, // 1000 per week -> ~52000 total invested
+          ),
+        ));
+
+        expect(result.totalInvested, closeTo(52000, 1.0)); // 1000 * 52
+        expect(result.maturityAmount, greaterThan(52000));
+      });
+
+      test('Percentage of balance withdrawal scales dynamically', () {
+        final result = calc.calculate(CompoundInput(
+          principal: 100000,
+          annualRate: 12,
+          tenureMonths: 12,
+          compoundFrequency: CompoundFrequency.monthly,
+          withdrawal: WithdrawalConfig(
+            amount: 5, // 5% of balance
+            frequency: PaymentFrequency.monthly,
+            type: WithdrawalType.percentageOfBalance,
+          ),
+        ));
+
+        // In the first month, interest is 1%. Balance before withdrawal = 101000.
+        // Withdrawal should be 5% of 101000 = 5050.
+        expect(result.breakdown.first.withdrawalThisPeriod, closeTo(5050.0, 1.0));
+        expect(result.totalWithdrawn, closeTo(48767.87, 1.0)); // Total sum over 12 decreasing months
+      });
+
       test('Validation guards throw ArgumentError', () {
         expect(
             () => calc.calculate(CompoundInput.lumpsum(

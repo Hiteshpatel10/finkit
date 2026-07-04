@@ -59,7 +59,26 @@ final class CompoundCalculator
     }
     if (input.tenureMonths <= 0) {
       throw ArgumentError.value(
-        input.tenureMonths, 'tenureMonths', 'Must be > 0');
+          input.tenureMonths, 'tenureMonths', 'Tenure must be positive');
+    }
+
+    // ── Defense-in-depth: Ensure step-up cadence stays at monthly minimum ─────
+    // (StepUpFrequency inherently restricts this, but this protects against future enum changes)
+    if (input.contribution?.stepUp != null &&
+        input.contribution!.stepUp!.stepUpFrequency.periodsPerYear > 12) {
+      throw ArgumentError.value(
+        input.contribution!.stepUp!.stepUpFrequency,
+        'contribution.stepUp.stepUpFrequency',
+        'Step-up frequency cannot be more frequent than monthly',
+      );
+    }
+    if (input.withdrawal?.stepUp != null &&
+        input.withdrawal!.stepUp!.stepUpFrequency.periodsPerYear > 12) {
+      throw ArgumentError.value(
+        input.withdrawal!.stepUp!.stepUpFrequency,
+        'withdrawal.stepUp.stepUpFrequency',
+        'Step-up frequency cannot be more frequent than monthly',
+      );
     }
 
     final breakdown = <CompoundBreakdownEntry>[];
@@ -74,10 +93,12 @@ final class CompoundCalculator
     double uncompoundedInterest = 0;
     
     // Determine when compounding happens
-    final int compoundIntervalMonths = 12 ~/ input.compoundFrequency.periodsPerYear;
+    final int periodsPerYear = input.compoundFrequency == CompoundFrequency.custom 
+        ? (input.customCompoundPeriods ?? 12) 
+        : input.compoundFrequency.periodsPerYear;
 
-    final bool isDaily = input.compoundFrequency == CompoundFrequency.daily;
-    final double dailyRate = isDaily ? (input.annualRate / 100) / 365 : 0;
+    final bool isDaily = periodsPerYear == 365 || periodsPerYear == 360;
+    final double dailyRate = isDaily ? (input.annualRate / 100) / periodsPerYear : 0;
     final double monthlySimpleRate = (input.annualRate / 100) / 12;
 
     // Unpack contribution config
@@ -131,13 +152,26 @@ final class CompoundCalculator
       }
 
       // ── Period flags ──────────────────────────────────────────────────────
-      final bool hasContribution = contrib != null && (month - 1) % (12 ~/ contrib.frequency.periodsPerYear) == 0;
-      final bool hasWithdrawal = withdrawal != null && currentWithdrawal > 0 && (month - 1) % (12 ~/ withdrawal.frequency.periodsPerYear) == 0;
+      final int contribPeriods = contrib?.frequency.periodsPerYear ?? 12;
+      final int withdrawalPeriods = withdrawal?.frequency.periodsPerYear ?? 12;
+
+      final bool hasContribution = contrib != null;
+      final bool hasWithdrawal = withdrawal != null && currentWithdrawal > 0;
 
       // ── Annuity-due: contribute BEFORE interest ───────────────────────────
       double contributionThisPeriod = 0;
-      if (hasContribution && contrib.timing == PaymentTiming.beginning) {
-        contributionThisPeriod = currentContribution;
+      if (hasContribution) {
+        if (contribPeriods > 12) {
+           contributionThisPeriod = currentContribution * (contribPeriods / 12);
+        } else {
+           final int interval = 12 ~/ contribPeriods;
+           if (interval > 0 && (month - 1) % interval == 0) {
+             contributionThisPeriod = currentContribution;
+           }
+        }
+      }
+
+      if (contributionThisPeriod > 0 && contrib!.timing == PaymentTiming.beginning) {
         totalInvested += contributionThisPeriod;
         balance += contributionThisPeriod;
       }
@@ -145,8 +179,14 @@ final class CompoundCalculator
       // ── Compound interest ─────────────────────────────────────────────────
       double interestForMonth = 0;
       if (isDaily) {
-         final days = 365 / 12; // average days per month
+         final days = periodsPerYear / 12; // average days per month
          final effectiveMultiplier = pow(1 + dailyRate, days) - 1;
+         interestForMonth = balance * effectiveMultiplier;
+         balance += interestForMonth;
+      } else if (periodsPerYear > 12) {
+         final periodsPerMonth = periodsPerYear / 12;
+         final ratePerPeriod = (input.annualRate / 100) / periodsPerYear;
+         final effectiveMultiplier = pow(1 + ratePerPeriod, periodsPerMonth) - 1;
          interestForMonth = balance * effectiveMultiplier;
          balance += interestForMonth;
       } else {
@@ -154,15 +194,15 @@ final class CompoundCalculator
          uncompoundedInterest += interestForMonth;
          
          // Compounding boundary
-         if (month % compoundIntervalMonths == 0) {
+         final int interval = 12 ~/ periodsPerYear;
+         if (interval > 0 && month % interval == 0) {
             balance += uncompoundedInterest;
             uncompoundedInterest = 0;
          }
       }
 
       // ── Ordinary annuity: contribute AFTER interest ───────────────────────
-      if (hasContribution && contrib.timing == PaymentTiming.end) {
-        contributionThisPeriod = currentContribution;
+      if (contributionThisPeriod > 0 && contrib!.timing == PaymentTiming.end) {
         totalInvested += contributionThisPeriod;
         balance += contributionThisPeriod;
       }
@@ -171,26 +211,57 @@ final class CompoundCalculator
       double withdrawalThisPeriod = 0;
       bool exhausted = false;
       if (hasWithdrawal) {
-        double effectiveBalance = balance + (isDaily ? 0 : uncompoundedInterest);
-        if (currentWithdrawal >= effectiveBalance) {
-          withdrawalThisPeriod = effectiveBalance;
-          exhausted = true;
-        } else {
-          withdrawalThisPeriod = currentWithdrawal;
-        }
-        totalWithdrawn += withdrawalThisPeriod;
+        double effectiveBalance = balance + (isDaily || periodsPerYear > 12 ? 0 : uncompoundedInterest);
         
-        // Deduct from uncompounded interest first, then balance
-        if (!isDaily) {
-          if (withdrawalThisPeriod <= uncompoundedInterest) {
-            uncompoundedInterest -= withdrawalThisPeriod;
+        double withdrawalTarget = 0;
+        switch (withdrawal.type) {
+          case WithdrawalType.fixedAmount:
+             withdrawalTarget = currentWithdrawal;
+             break;
+          case WithdrawalType.percentageOfBalance:
+             withdrawalTarget = effectiveBalance * (currentWithdrawal / 100);
+             break;
+          case WithdrawalType.percentageOfEarnings:
+             double earnings = effectiveBalance + totalWithdrawn - totalInvested;
+             if (earnings > 0) {
+               withdrawalTarget = earnings * (currentWithdrawal / 100);
+             }
+             break;
+        }
+
+        double withdrawalThisPeriodTarget = 0;
+        if (withdrawalTarget > 0) {
+          if (withdrawalPeriods > 12) {
+             withdrawalThisPeriodTarget = withdrawalTarget * (withdrawalPeriods / 12);
           } else {
-            double remaining = withdrawalThisPeriod - uncompoundedInterest;
-            uncompoundedInterest = 0;
-            balance -= remaining;
+             final int interval = 12 ~/ withdrawalPeriods;
+             if (interval > 0 && (month - 1) % interval == 0) {
+               withdrawalThisPeriodTarget = withdrawalTarget;
+             }
           }
-        } else {
-          balance -= withdrawalThisPeriod;
+        }
+
+        if (withdrawalThisPeriodTarget > 0) {
+          if (withdrawalThisPeriodTarget >= effectiveBalance) {
+            withdrawalThisPeriod = effectiveBalance;
+            exhausted = true;
+          } else {
+            withdrawalThisPeriod = withdrawalThisPeriodTarget;
+          }
+          totalWithdrawn += withdrawalThisPeriod;
+          
+          // Deduct from uncompounded interest first, then balance
+          if (!isDaily && periodsPerYear <= 12) {
+            if (withdrawalThisPeriod <= uncompoundedInterest) {
+              uncompoundedInterest -= withdrawalThisPeriod;
+            } else {
+              double remaining = withdrawalThisPeriod - uncompoundedInterest;
+              uncompoundedInterest = 0;
+              balance -= remaining;
+            }
+          } else {
+            balance -= withdrawalThisPeriod;
+          }
         }
       }
 
@@ -202,7 +273,7 @@ final class CompoundCalculator
           contributionThisPeriod: contributionThisPeriod,
           interestThisPeriod: interestForMonth,
           withdrawalThisPeriod: withdrawalThisPeriod,
-          closingBalance: balance + (isDaily ? 0 : uncompoundedInterest),
+          closingBalance: balance + (isDaily || periodsPerYear > 12 ? 0 : uncompoundedInterest),
           cumulativeInvested: totalInvested,
           cumulativeWithdrawn: totalWithdrawn,
           balanceExhausted: exhausted,
@@ -213,7 +284,7 @@ final class CompoundCalculator
     }
 
     // Force final compounding at maturity if not already compounded
-    if (!isDaily && uncompoundedInterest > 0) {
+    if (!isDaily && periodsPerYear <= 12 && uncompoundedInterest > 0) {
        balance += uncompoundedInterest;
        uncompoundedInterest = 0;
     }

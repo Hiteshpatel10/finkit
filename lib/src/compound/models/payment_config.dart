@@ -1,8 +1,12 @@
 // How often regular contributions are made.
 enum PaymentFrequency {
   daily(365),
+  semiWeekly(104),
   weekly(52),
+  biWeekly(26),
+  semiMonthly(24),
   monthly(12),
+  biMonthly(6),
   quarterly(4),
   halfYearly(2),
   yearly(1);
@@ -26,4 +30,16 @@ enum PaymentTiming {
 
   /// Contribute at the end of each period (ordinary annuity). Default.
   end,
+}
+
+/// A restricted frequency specifically for step-ups to prevent > 12 times a year 
+/// which would cause mathematically invalid step-ups within a monthly compound loop.
+enum StepUpFrequency {
+  monthly(12),
+  quarterly(4),
+  halfYearly(2),
+  yearly(1);
+
+  final int periodsPerYear;
+  const StepUpFrequency(this.periodsPerYear);
 }
