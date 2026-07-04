@@ -83,4 +83,76 @@ final class CompoundResult {
     this.totalWithdrawn = 0,
     required this.breakdown,
   });
+
+  /// Groups the monthly breakdown into a yearly summary for easier viewing.
+  List<CompoundGroupedBreakdown> get yearlyBreakdown =>
+      breakdown.groupByMonths(12);
 }
+
+/// Represents a grouped set of breakdown entries (e.g., a year containing its months).
+final class CompoundGroupedBreakdown {
+  /// The summary of the entire group.
+  final CompoundBreakdownEntry summary;
+  
+  /// The individual entries that make up this group.
+  final List<CompoundBreakdownEntry> entries;
+
+  const CompoundGroupedBreakdown({
+    required this.summary,
+    required this.entries,
+  });
+}
+
+/// Utility extension to group monthly breakdowns into larger hierarchical periods.
+extension CompoundBreakdownGrouping on Iterable<CompoundBreakdownEntry> {
+  /// Groups the breakdown into larger periods, keeping the underlying entries.
+  ///
+  /// [monthsPerGroup] determines the grouping size (e.g., 12 for yearly, 3 for quarterly).
+  List<CompoundGroupedBreakdown> groupByMonths(int monthsPerGroup) {
+    if (isEmpty || monthsPerGroup <= 1) {
+      return map((e) => CompoundGroupedBreakdown(summary: e, entries: [e])).toList();
+    }
+
+    final groupedEntries = <CompoundGroupedBreakdown>[];
+    int currentGroupPeriod = 1;
+
+    for (int i = 0; i < length; i += monthsPerGroup) {
+      final chunk = skip(i).take(monthsPerGroup).toList();
+
+      final firstMonth = chunk.first;
+      final lastMonth = chunk.last;
+
+      final totalContribution = chunk.fold(
+          0.0, (sum, entry) => sum + entry.contributionThisPeriod);
+      final totalInterest = chunk.fold(
+          0.0, (sum, entry) => sum + entry.interestThisPeriod);
+      final totalWithdrawal = chunk.fold(
+          0.0, (sum, entry) => sum + entry.withdrawalThisPeriod);
+
+      final summary = CompoundBreakdownEntry(
+        period: currentGroupPeriod,
+        year: lastMonth.year,
+        openingBalance: firstMonth.openingBalance,
+        contributionThisPeriod: totalContribution,
+        interestThisPeriod: totalInterest,
+        withdrawalThisPeriod: totalWithdrawal,
+        closingBalance: lastMonth.closingBalance,
+        cumulativeInvested: lastMonth.cumulativeInvested,
+        cumulativeWithdrawn: lastMonth.cumulativeWithdrawn,
+        balanceExhausted: lastMonth.balanceExhausted,
+      );
+
+      groupedEntries.add(
+        CompoundGroupedBreakdown(
+          summary: summary,
+          entries: chunk,
+        ),
+      );
+
+      currentGroupPeriod++;
+    }
+
+    return groupedEntries;
+  }
+}
+

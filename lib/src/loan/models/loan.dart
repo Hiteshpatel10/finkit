@@ -28,6 +28,10 @@ final class Loan {
   /// Total interest paid = total payment − original principal.
   double get totalInterest => totalPayment - principal;
 
+  /// Groups the monthly amortization schedule into a yearly summary for easier viewing.
+  List<AmortizationGroupedBreakdown>? get yearlyBreakdown =>
+      amortizationSchedule?.groupByMonths(12);
+
   Loan copyWith({
     double? principal,
     double? annualRate,

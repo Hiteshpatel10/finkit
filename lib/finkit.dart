@@ -75,3 +75,12 @@ export 'src/income_tax/models/income_tax_result.dart';
 export 'src/income_tax/calculators/income_tax_interfaces.dart';
 export 'src/income_tax/calculators/income_tax_calculator.dart';
 export 'src/income_tax/calculators/income_tax_calculator_factory.dart';
+
+// PPF – models
+export 'src/ppf/models/ppf_input.dart';
+export 'src/ppf/models/ppf_result.dart';
+
+// PPF – calculators
+export 'src/ppf/calculators/ppf_interfaces.dart';
+export 'src/ppf/calculators/ppf_calculator.dart';
+export 'src/ppf/calculators/ppf_calculator_factory.dart';
