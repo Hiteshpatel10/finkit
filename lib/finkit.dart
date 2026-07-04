@@ -47,3 +47,11 @@ export 'src/xirr/models/xirr_result.dart';
 export 'src/xirr/calculators/xirr_interfaces.dart';
 export 'src/xirr/calculators/xirr_calculator.dart';
 export 'src/xirr/calculators/xirr_calculator_factory.dart';
+
+// Inflation – models
+export 'src/inflation/models/inflation_result.dart';
+
+// Inflation – calculators
+export 'src/inflation/calculators/inflation_interfaces.dart';
+export 'src/inflation/calculators/inflation_calculator.dart';
+export 'src/inflation/calculators/inflation_calculator_factory.dart';
