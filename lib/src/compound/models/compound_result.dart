@@ -76,6 +76,20 @@ final class CompoundResult {
   int? get exhaustedAtPeriod =>
       isCorpusExhausted ? breakdown.last.period : null;
 
+  /// The percentage of the final total (invested + interest) that comes from the invested amount.
+  double get investedPercentage {
+    final total = totalInvested + totalInterest;
+    if (total == 0) return 0;
+    return (totalInvested / total) * 100;
+  }
+
+  /// The percentage of the final total (invested + interest) that comes from interest.
+  double get returnPercentage {
+    final total = totalInvested + totalInterest;
+    if (total == 0) return 0;
+    return (totalInterest / total) * 100;
+  }
+
   const CompoundResult({
     required this.maturityAmount,
     required this.totalInvested,
