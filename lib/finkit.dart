@@ -38,3 +38,12 @@ export 'src/gst/models/gst_result.dart';
 export 'src/gst/calculators/gst_interfaces.dart';
 export 'src/gst/calculators/gst_calculator.dart';
 export 'src/gst/calculators/gst_calculator_factory.dart';
+
+// XIRR – models
+export 'src/xirr/models/xirr_cash_flow.dart';
+export 'src/xirr/models/xirr_result.dart';
+
+// XIRR – calculators
+export 'src/xirr/calculators/xirr_interfaces.dart';
+export 'src/xirr/calculators/xirr_calculator.dart';
+export 'src/xirr/calculators/xirr_calculator_factory.dart';

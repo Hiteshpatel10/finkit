@@ -155,37 +155,44 @@ final class ReducingEmiCalculator
   /// Newton-Raphson: converges in ~10 iterations using tangent line approximation.
   ///
   ///   f(r)  = P × r × (1+r)^n / ((1+r)^n − 1) − EMI  →  want f(r) = 0
-  ///   f'(r) = d/dr [ P × r × (1+r)^n / ((1+r)^n − 1) ]  (via quotient rule)
-  ///   r₁    = r₀ − f(r₀) / f'(r₀)
+  ///
+  /// Derivative via quotient rule on g(r) = r × A / (A − 1), where A = (1+r)^n:
+  ///
+  ///   g'(r) = [(A + r·A')(A−1) − r·A·A'] / (A−1)²
+  ///         = [A(A−1) + r·A'(A−1−A)] / (A−1)²
+  ///         = [A(A−1) − r·A'] / (A−1)²
+  ///
+  /// where A' = dA/dr = n·(1+r)^(n−1) = n·A/(1+r)
+  ///
+  ///   f'(r) = P × [A(A−1) − r·n·A/(1+r)] / (A−1)²
   double _newtonRaphson(double principal, double emi, int tenureMonths) {
     final n = tenureMonths;
     double r = emi / principal; // initial guess: rough monthly rate
 
     for (int i = 0; i < 50; i++) {
-      final factor = pow(1 + r, n).toDouble();
+      final A = pow(1 + r, n).toDouble();
+      final Adiff = A - 1; // (A − 1)
 
       // f(r): difference between EMI at current guess and the target EMI
-      final f = (principal * r * factor) / (factor - 1) - emi;
+      final f = (principal * r * A) / Adiff - emi;
 
-      // f'(r): derivative via quotient rule
-      final numerator =
-          factor * (n * r - (1 + r) * ((factor - 1) / factor)) + n * r;
-      final denominator = pow(factor - 1, 2).toDouble();
-      final fPrime = principal * numerator / denominator;
+      // f'(r) = P × [A·(A−1) − r·n·A/(1+r)] / (A−1)²
+      final APrime = n * A / (1 + r); // dA/dr = n·(1+r)^(n−1)
+      final fPrime = principal * (A * Adiff - r * APrime) / (Adiff * Adiff);
 
-      // Guard 1: derivative near zero → step would blow up
+      // Guard: derivative near zero → step would blow up
       if (fPrime.abs() < 1e-12) {
         throw StateError('Derivative too small, switching to bisection');
       }
 
       final next = r - f / fPrime;
 
-      // Guard 2: guess left valid monthly rate range (0, 50%]
+      // Guard: guess left valid monthly rate range (0, 50%]
       if (next <= 0 || next > 0.5) {
         throw StateError('Newton-Raphson diverged, switching to bisection');
       }
 
-      if ((next - r).abs() < 1e-12) {
+      if ((next - r).abs() < 1e-10) {
         r = next;
         break;
       }
