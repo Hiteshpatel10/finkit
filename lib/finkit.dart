@@ -64,3 +64,14 @@ export 'src/hra/models/hra_result.dart';
 export 'src/hra/calculators/hra_interfaces.dart';
 export 'src/hra/calculators/hra_calculator.dart';
 export 'src/hra/calculators/hra_calculator_factory.dart';
+
+// Income Tax – models
+export 'src/income_tax/models/tax_regime.dart';
+export 'src/income_tax/models/deductions.dart';
+export 'src/income_tax/models/tax_slab_entry.dart';
+export 'src/income_tax/models/income_tax_result.dart';
+
+// Income Tax – calculators
+export 'src/income_tax/calculators/income_tax_interfaces.dart';
+export 'src/income_tax/calculators/income_tax_calculator.dart';
+export 'src/income_tax/calculators/income_tax_calculator_factory.dart';
