@@ -105,6 +105,10 @@ final class CompoundCalculator
     final contrib = input.contribution;
     // Unpack withdrawal config
     final withdrawal = input.withdrawal;
+    // Read once, null-safe, outside the loop. Inside the loop the only guard
+    // was the hasWithdrawal bool, and the AOT compiler hoisted the field load
+    // above it (crash on iOS 27 for SIP, where withdrawal is null).
+    final WithdrawalType? withdrawalType = withdrawal?.type;
 
     // Mutable amounts — mutated by step-up logic each cycle
     double currentContribution = contrib?.amount ?? 0;
@@ -214,7 +218,7 @@ final class CompoundCalculator
         double effectiveBalance = balance + (isDaily || periodsPerYear > 12 ? 0 : uncompoundedInterest);
         
         double withdrawalTarget = 0;
-        switch (withdrawal.type) {
+        switch (withdrawalType) {
           case WithdrawalType.fixedAmount:
              withdrawalTarget = currentWithdrawal;
              break;
@@ -226,6 +230,8 @@ final class CompoundCalculator
              if (earnings > 0) {
                withdrawalTarget = earnings * (currentWithdrawal / 100);
              }
+             break;
+          case null:
              break;
         }
 
